@@ -1,0 +1,711 @@
+{
+  "info": {
+    "_postman_id": "ghl-api-collection-2024",
+    "name": "GoHighLevel API Integration",
+    "description": "Production-ready API collection for GoHighLevel integration with OAuth 2.0 authentication",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health & Info",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Check if the API server is running"
+          },
+          "response": []
+        },
+        {
+          "name": "API Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api",
+              "host": ["{{baseUrl}}"],
+              "path": ["api"]
+            },
+            "description": "Get API documentation and available endpoints"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Get OAuth URL",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/ghl",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "ghl"]
+            },
+            "description": "Get the GoHighLevel OAuth authorization URL"
+          },
+          "response": []
+        },
+        {
+          "name": "OAuth Callback",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/callback?code={{authorizationCode}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "callback"],
+              "query": [
+                {
+                  "key": "code",
+                  "value": "{{authorizationCode}}",
+                  "description": "Authorization code from GoHighLevel"
+                }
+              ]
+            },
+            "description": "Exchange authorization code for access token"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Current User",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "me"]
+            },
+            "description": "Get current authenticated user information"
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "refresh"]
+            },
+            "description": "Refresh the GoHighLevel access token"
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "logout"]
+            },
+            "description": "Logout and revoke tokens"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "Get Dashboard Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard/stats?locationId={{locationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "dashboard", "stats"],
+              "query": [
+                {
+                  "key": "locationId",
+                  "value": "{{locationId}}",
+                  "description": "Optional: Filter by location ID"
+                }
+              ]
+            },
+            "description": "Get complete dashboard statistics"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Dashboard Summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard/summary?locationId={{locationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "dashboard", "summary"],
+              "query": [
+                {
+                  "key": "locationId",
+                  "value": "{{locationId}}",
+                  "description": "Optional: Filter by location ID"
+                }
+              ]
+            },
+            "description": "Get quick summary for dashboard cards"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Recent Contacts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard/recent-contacts?limit=10&locationId={{locationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "dashboard", "recent-contacts"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Number of contacts to return (max 50)"
+                },
+                {
+                  "key": "locationId",
+                  "value": "{{locationId}}",
+                  "description": "Optional: Filter by location ID"
+                }
+              ]
+            },
+            "description": "Get recent contacts for dashboard"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Recent Opportunities",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard/recent-opportunities?limit=10&locationId={{locationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "dashboard", "recent-opportunities"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Number of opportunities to return (max 50)"
+                },
+                {
+                  "key": "locationId",
+                  "value": "{{locationId}}",
+                  "description": "Optional: Filter by location ID"
+                }
+              ]
+            },
+            "description": "Get recent opportunities for dashboard"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Pipeline Summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard/pipeline-summary?locationId={{locationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "dashboard", "pipeline-summary"],
+              "query": [
+                {
+                  "key": "locationId",
+                  "value": "{{locationId}}",
+                  "description": "Optional: Filter by location ID"
+                }
+              ]
+            },
+            "description": "Get pipeline summary and statistics"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Get All Users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users?page=1&limit=20&locationId={{locationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Items per page (max 100)"
+                },
+                {
+                  "key": "locationId",
+                  "value": "{{locationId}}",
+                  "description": "Optional: Filter by location ID"
+                }
+              ]
+            },
+            "description": "Get all users with pagination"
+          },
+          "response": []
+        },
+        {
+          "name": "Get User by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "{{userId}}"]
+            },
+            "description": "Get a specific user by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Current User Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/details",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "me", "details"]
+            },
+            "description": "Get detailed information about the current user from GHL"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Contacts",
+      "item": [
+        {
+          "name": "Get All Contacts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/contacts?page=1&limit=20&query=&locationId={{locationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "contacts"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Items per page (max 100)"
+                },
+                {
+                  "key": "query",
+                  "value": "",
+                  "description": "Optional: Search query"
+                },
+                {
+                  "key": "locationId",
+                  "value": "{{locationId}}",
+                  "description": "Optional: Filter by location ID"
+                }
+              ]
+            },
+            "description": "Get all contacts with pagination and filtering"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Contact by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/contacts/{{contactId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "contacts", "{{contactId}}"]
+            },
+            "description": "Get a specific contact by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Search Contacts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/contacts/search?q=john&limit=20&locationId={{locationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "contacts", "search"],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "john",
+                  "description": "Search query"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Items per page (max 100)"
+                },
+                {
+                  "key": "locationId",
+                  "value": "{{locationId}}",
+                  "description": "Optional: Filter by location ID"
+                }
+              ]
+            },
+            "description": "Search contacts by query"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Opportunities",
+      "item": [
+        {
+          "name": "Get All Opportunities",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/opportunities?page=1&limit=20&pipelineId=&stageId=&locationId={{locationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "opportunities"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Items per page (max 100)"
+                },
+                {
+                  "key": "pipelineId",
+                  "value": "",
+                  "description": "Optional: Filter by pipeline ID"
+                },
+                {
+                  "key": "stageId",
+                  "value": "",
+                  "description": "Optional: Filter by stage ID"
+                },
+                {
+                  "key": "locationId",
+                  "value": "{{locationId}}",
+                  "description": "Optional: Filter by location ID"
+                }
+              ]
+            },
+            "description": "Get all opportunities with pagination and filtering"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Opportunity by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/opportunities/{{opportunityId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "opportunities", "{{opportunityId}}"]
+            },
+            "description": "Get a specific opportunity by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Opportunities by Pipeline",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/opportunities/pipeline/{{pipelineId}}?page=1&limit=20&locationId={{locationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "opportunities", "pipeline", "{{pipelineId}}"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Items per page (max 100)"
+                },
+                {
+                  "key": "locationId",
+                  "value": "{{locationId}}",
+                  "description": "Optional: Filter by location ID"
+                }
+              ]
+            },
+            "description": "Get opportunities filtered by pipeline ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Opportunities by Stage",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/opportunities/stage/{{stageId}}?page=1&limit=20&locationId={{locationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "opportunities", "stage", "{{stageId}}"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Items per page (max 100)"
+                },
+                {
+                  "key": "locationId",
+                  "value": "{{locationId}}",
+                  "description": "Optional: Filter by location ID"
+                }
+              ]
+            },
+            "description": "Get opportunities filtered by stage ID"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Webhooks",
+      "item": [
+        {
+          "name": "Receive GHL Webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"INSTALL\",\n  \"appId\": \"665c6bb13d4e5364bdec0e2f\",\n  \"versionId\": \"665c6bb13d4e5364bdec0e2f\",\n  \"installType\": \"Location\",\n  \"locationId\": \"Z8kjd8ZxvUL2d7Un3At8\",\n  \"companyId\": \"GNb7aIv4rQFVb9iwNl5K\",\n  \"userId\": \"Rg6BRRiHh7dS9gJy3W8a\",\n  \"companyName\": \"Test Company\",\n  \"isWhitelabelCompany\": false,\n  \"timestamp\": \"2025-06-25T06:57:06.225Z\",\n  \"webhookId\": \"1a533f85-1f1e-4886-891e-ee0cf4666e90\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/webhooks/ghl",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "webhooks", "ghl"]
+            },
+            "description": "Receive GoHighLevel webhook events"
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "event": [],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3001",
+      "type": "string",
+      "description": "Base URL of the API server"
+    },
+    {
+      "key": "jwtToken",
+      "value": "",
+      "type": "string",
+      "description": "JWT token obtained from OAuth callback"
+    },
+    {
+      "key": "authorizationCode",
+      "value": "",
+      "type": "string",
+      "description": "Authorization code from GoHighLevel OAuth"
+    },
+    {
+      "key": "locationId",
+      "value": "Z8kjd8ZxvUL2d7Un3At8",
+      "type": "string",
+      "description": "GoHighLevel Location ID"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string",
+      "description": "User ID for testing"
+    },
+    {
+      "key": "contactId",
+      "value": "",
+      "type": "string",
+      "description": "Contact ID for testing"
+    },
+    {
+      "key": "opportunityId",
+      "value": "",
+      "type": "string",
+      "description": "Opportunity ID for testing"
+    },
+    {
+      "key": "pipelineId",
+      "value": "",
+      "type": "string",
+      "description": "Pipeline ID for testing"
+    },
+    {
+      "key": "stageId",
+      "value": "",
+      "type": "string",
+      "description": "Stage ID for testing"
+    }
+  ]
+}
