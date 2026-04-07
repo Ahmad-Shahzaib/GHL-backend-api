@@ -4,11 +4,28 @@ import { config } from '../config';
 const { combine, timestamp, printf, colorize, errors } = winston.format;
 
 // Custom format for logs
+// Safe stringify that handles circular references
+const safeStringify = (obj: any): string => {
+  const seen = new Set();
+  return JSON.stringify(obj, (key, value) => {
+    if (typeof value === 'object' && value !== null) {
+      if (seen.has(value)) return '[Circular]';
+      seen.add(value);
+    }
+    return value;
+  });
+};
+
+// Custom format for logs
 const customFormat = printf(({ level, message, timestamp, stack, ...metadata }) => {
   let msg = `${timestamp} [${level}]: ${message}`;
   
   if (Object.keys(metadata).length > 0) {
-    msg += ` ${JSON.stringify(metadata)}`;
+    try {
+      msg += ` ${safeStringify(metadata)}`;
+    } catch (e) {
+      msg += ` [Unserializable metadata]`;
+    }
   }
   
   if (stack) {

@@ -64,6 +64,7 @@ export const GHL_API_ENDPOINTS = {
   // Contacts
   contacts: '/contacts/',
   contactById: (id: string) => `/contacts/${id}`,
+  contactAppointments: (id: string) => `/contacts/${id}/appointments`,
   
   // Opportunities
   opportunities: '/opportunities/search',
@@ -81,7 +82,14 @@ export const GHL_API_ENDPOINTS = {
   // Calendars
   calendars: '/calendars/',
   calendarById: (id: string) => `/calendars/${id}`,
-  appointments: '/calendars/events',
+  
+  // Calendar Events/Appointments
+  appointments: '/calendars/events/appointments',
+  appointmentById: (id: string) => `/calendars/events/appointments/${id}`,
+  
+  // Calendar Resources (Rooms/Equipment)
+  resources: '/calendars/resources',
+  resourceById: (id: string) => `/calendars/resources/${id}`,
   
   // Search
   search: '/locations/search',

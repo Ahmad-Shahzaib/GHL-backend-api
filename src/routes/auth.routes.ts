@@ -52,7 +52,7 @@ router.get(
     }
     
     // Exchange code for tokens
-    const result = await authService.handleOAuthCallback(code, 'Location');
+    const result = await authService.handleOAuthCallback(code, 'Company');
     
     const response: ApiResponse<{
       token: string;

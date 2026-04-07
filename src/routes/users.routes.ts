@@ -3,6 +3,7 @@ import { ghlClient } from '../services/ghlClient';
 import { authenticate } from '../middleware/auth';
 import { asyncHandler, Errors } from '../middleware/errorHandler';
 import { ApiResponse, PaginationMeta, GHLUser } from '../types';
+import { logger } from '../utils/logger';
 
 const router = Router();
 
@@ -85,19 +86,68 @@ router.get(
   authenticate,
   asyncHandler(async (req: Request, res: Response) => {
     const userId = req.user?.id;
-    
+
     if (!userId) {
       throw Errors.BadRequest('User ID not available');
     }
-    
+
     const user = await ghlClient.getUser(userId);
-    
+
     const response: ApiResponse<GHLUser> = {
       success: true,
       data: user,
     };
-    
+
     res.json(response);
+  })
+);
+
+/**
+ * @route   POST /api/users
+ * @desc    Create a new user
+ * @access  Private
+ */
+router.post(
+  '/',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    ghlClient.setApiKey(req.ghlToken!);
+    const userData = req.body;
+
+    // Validate required fields
+    if (!userData.firstName) {
+      throw Errors.BadRequest('First name is required');
+    }
+    if (!userData.lastName) {
+      throw Errors.BadRequest('Last name is required');
+    }
+    if (!userData.email) {
+      throw Errors.BadRequest('Email is required');
+    }
+    if (!userData.password) {
+      throw Errors.BadRequest('Password is required');
+    }
+
+    try {
+      const user = await ghlClient.createUser(userData);
+
+      const response: ApiResponse<GHLUser> = {
+        success: true,
+        data: user,
+      };
+
+      res.status(201).json(response);
+    } catch (error: any) {
+      logger.error('Failed to create user in GHL:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+      });
+      
+      // Return the actual GHL error message
+      const ghlError = error.response?.data?.message || error.message;
+      throw Errors.BadRequest(`Failed to create user: ${ghlError}`);
+    }
   })
 );
 

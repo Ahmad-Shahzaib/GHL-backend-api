@@ -117,6 +117,28 @@ export const authRateLimiter = rateLimit({
 });
 
 /**
+ * Rate limiting for workflow endpoints
+ * Prevents abuse of computationally expensive operations
+ */
+export const workflowRateLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 30, // 30 requests per minute
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: {
+      code: 'TOO_MANY_REQUESTS',
+      message: 'Too many workflow requests, please try again later.',
+    },
+  },
+  handler: (req, res, _next, options) => {
+    logger.warn(`Workflow rate limit exceeded for IP: ${req.ip}`);
+    res.status(429).json(options.message);
+  },
+});
+
+/**
  * Request sanitization middleware
  * Removes potentially dangerous characters from request body
  */

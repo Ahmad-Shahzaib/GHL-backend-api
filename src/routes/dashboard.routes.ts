@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { ghlClient } from '../services/ghlClient';
 import { authenticate } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
-import { ApiResponse, PaginationMeta, GHLDashboardStats } from '../types';
+import { ApiResponse, PaginationMeta, GHLDashboardStats, KpiDashboardData } from '../types';
 
 const router = Router();
 
@@ -86,6 +86,62 @@ router.get(
     const response: ApiResponse<typeof stats.pipelineSummary> = {
       success: true,
       data: stats.pipelineSummary,
+    };
+    res.json(response);
+  })
+);
+
+// KPI Dashboard Metrics
+router.get(
+  '/kpi',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    ghlClient.setApiKey(req.ghlToken!);
+    const locationId = req.query.locationId as string | undefined;
+    const startDate = req.query.startDate as string | undefined;
+    const endDate = req.query.endDate as string | undefined;
+    
+    const kpiData = await ghlClient.getKpiMetrics(locationId, { startDate, endDate });
+    const response: ApiResponse<KpiDashboardData> = {
+      success: true,
+      data: kpiData,
+    };
+    res.json(response);
+  })
+);
+
+// Revenue by Hour - Prime vs Off-peak distribution
+router.get(
+  '/revenue-by-hour',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    ghlClient.setApiKey(req.ghlToken!);
+    const locationId = req.query.locationId as string | undefined;
+    const startDate = req.query.startDate as string | undefined;
+    const endDate = req.query.endDate as string | undefined;
+    
+    const revenueByHour = await ghlClient.getRevenueByHour({ locationId, startDate, endDate });
+    const response: ApiResponse<typeof revenueByHour> = {
+      success: true,
+      data: revenueByHour,
+    };
+    res.json(response);
+  })
+);
+
+// Daily Revenue - Last 30 days
+router.get(
+  '/daily-revenue',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    ghlClient.setApiKey(req.ghlToken!);
+    const locationId = req.query.locationId as string | undefined;
+    const days = parseInt(req.query.days as string) || 30;
+    
+    const dailyRevenue = await ghlClient.getDailyRevenue({ locationId, days });
+    const response: ApiResponse<typeof dailyRevenue> = {
+      success: true,
+      data: dailyRevenue,
     };
     res.json(response);
   })
