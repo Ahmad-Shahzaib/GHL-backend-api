@@ -7,7 +7,7 @@ const { combine, timestamp, printf, colorize, errors } = winston.format;
 // Safe stringify that handles circular references
 const safeStringify = (obj: any): string => {
   const seen = new Set();
-  return JSON.stringify(obj, (key, value) => {
+  return JSON.stringify(obj, (_key, value) => {
     if (typeof value === 'object' && value !== null) {
       if (seen.has(value)) return '[Circular]';
       seen.add(value);

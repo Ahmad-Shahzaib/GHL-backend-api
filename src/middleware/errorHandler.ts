@@ -87,6 +87,18 @@ export const errorHandler = (
     errorCode = 'TOKEN_EXPIRED';
     message = 'Authentication token has expired';
   }
+  else if (err.name === 'ValidationError') {
+    statusCode = 422;
+    errorCode = 'VALIDATION_ERROR';
+    message = err.message;
+    details = (err as any).errors || undefined;
+  }
+  else if ((err as any).code === 11000 || (err as any).code === '11000') {
+    statusCode = 409;
+    errorCode = 'CONFLICT';
+    message = 'Resource conflict';
+    details = (err as any).keyValue || undefined;
+  }
   // Handle Axios errors (from GHL API)
   else if (err.name === 'AxiosError' || (err as any).isAxiosError) {
     const axiosError = err as any;

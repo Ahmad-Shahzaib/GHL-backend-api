@@ -1,190 +1,86 @@
 import { Router, Request, Response } from 'express';
-import { ghlClient } from '../services/ghlClient';
 import { authenticate } from '../middleware/auth';
 import { asyncHandler, Errors } from '../middleware/errorHandler';
-import { ApiResponse, PaginationMeta, GHLTreatment } from '../types';
+import { ApiResponse, PaginationMeta } from '../types';
 import { logger } from '../utils/logger';
+import { Treatment } from '../models/Treatment';
 
 const router = Router();
 
-/**
- * @route   GET /api/treatments
- * @desc    Get all treatments with filtering
- * @access  Private
- */
-router.get(
-  '/',
-  authenticate,
-  asyncHandler(async (req: Request, res: Response) => {
-    ghlClient.setApiKey(req.ghlToken!);
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
-    const locationId = req.query.locationId as string | undefined;
-    const category = req.query.category as string | undefined;
-    const isActive = req.query.isActive === 'true' ? true : req.query.isActive === 'false' ? false : undefined;
+// GET all treatments
+router.get('/', authenticate, asyncHandler(async (req: Request, res: Response) => {
+  const locationId = req.query.locationId as string || (req as any).user?.locationId || '';
+  const category   = req.query.category as string | undefined;
+  const page       = parseInt(req.query.page  as string) || 1;
+  const limit      = Math.min(parseInt(req.query.limit as string) || 100, 500);
 
-    let treatments: GHLTreatment[] = [];
-    let total = 0;
+  const filter: any = { locationId };
+  if (category) filter.category = category;
 
-    try {
-      logger.info('Fetching treatments with params:', { locationId, category, limit, page });
+  const [treatments, total] = await Promise.all([
+    Treatment.find(filter).skip((page - 1) * limit).limit(limit).lean(),
+    Treatment.countDocuments(filter),
+  ]);
 
-      const treatmentsResponse = await ghlClient.getTreatments({
-        limit,
-        page,
-        locationId,
-        category,
-        isActive,
-      });
+  res.json({
+    success: true,
+    data: treatments,
+    meta: { page, limit, total, totalPages: Math.ceil(total / limit) || 1, hasNextPage: page * limit < total, hasPrevPage: page > 1 } as PaginationMeta,
+  });
+}));
 
-      treatments = treatmentsResponse.treatments || [];
-      total = treatmentsResponse.meta?.total || treatments.length;
-    } catch (error: any) {
-      logger.warn('Failed to fetch treatments from GHL API, returning empty array:', error?.message);
-    }
+// GET single treatment
+router.get('/:id', authenticate, asyncHandler(async (req: Request, res: Response) => {
+  const treatment = await Treatment.findById(req.params.id).lean();
+  if (!treatment) throw Errors.NotFound('Treatment not found');
+  res.json({ success: true, data: treatment });
+}));
 
-    const response: ApiResponse<GHLTreatment[]> = {
-      success: true,
-      data: treatments,
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit) || 1,
-        hasNextPage: page * limit < total,
-        hasPrevPage: page > 1,
-      } as PaginationMeta,
-    };
+// POST create treatment
+router.post('/', authenticate, asyncHandler(async (req: Request, res: Response) => {
+  const locationId = req.query.locationId as string || (req as any).user?.locationId || '';
+  const { name, category, price, duration_minutes, required_equipment, prime_hour_eligible, room_type, provider_qualification } = req.body;
 
-    res.setHeader('X-Total-Count', total.toString());
-    res.json(response);
-  })
-);
+  if (!name)              throw Errors.BadRequest('Treatment name is required');
+  if (!category)          throw Errors.BadRequest('Category is required');
+  if (price === undefined) throw Errors.BadRequest('Price is required');
+  if (!duration_minutes)  throw Errors.BadRequest('Duration is required');
 
-/**
- * @route   GET /api/treatments/:id
- * @desc    Get single treatment by ID
- * @access  Private
- */
-router.get(
-  '/:id',
-  authenticate,
-  asyncHandler(async (req: Request, res: Response) => {
-    ghlClient.setApiKey(req.ghlToken!);
-    const { id } = req.params;
-    const locationId = req.query.locationId as string | undefined;
+  const revenue_per_hour = duration_minutes > 0 ? Math.round(price / (duration_minutes / 60)) : 0;
 
-    if (!id) {
-      throw Errors.BadRequest('Treatment ID is required');
-    }
+  const treatment = await Treatment.create({
+    locationId,
+    name,
+    category,
+    price,
+    duration_minutes,
+    required_equipment: required_equipment || [],
+    prime_hour_eligible: prime_hour_eligible !== false,
+    revenue_per_hour,
+    room_type:              room_type              || '',
+    provider_qualification: provider_qualification || '',
+    isActive: true,
+  });
 
-    const treatment = await ghlClient.getTreatment(id, locationId);
+  logger.info(`Treatment created: ${name} for location ${locationId}`);
+  res.status(201).json({ success: true, data: treatment });
+}));
 
-    if (!treatment) {
-      throw Errors.NotFound('Treatment not found');
-    }
+// PUT update treatment
+router.put('/:id', authenticate, asyncHandler(async (req: Request, res: Response) => {
+  const update = { ...req.body };
+  if (update.price !== undefined && update.duration_minutes) {
+    update.revenue_per_hour = Math.round(update.price / (update.duration_minutes / 60));
+  }
+  const treatment = await Treatment.findByIdAndUpdate(req.params.id, update, { new: true }).lean();
+  if (!treatment) throw Errors.NotFound('Treatment not found');
+  res.json({ success: true, data: treatment });
+}));
 
-    const response: ApiResponse<GHLTreatment> = {
-      success: true,
-      data: treatment,
-    };
-
-    res.json(response);
-  })
-);
-
-/**
- * @route   POST /api/treatments
- * @desc    Create a new treatment
- * @access  Private
- */
-router.post(
-  '/',
-  authenticate,
-  asyncHandler(async (req: Request, res: Response) => {
-    ghlClient.setApiKey(req.ghlToken!);
-    const treatmentData = req.body;
-
-    // Validate required fields
-    if (!treatmentData.name) {
-      throw Errors.BadRequest('Treatment name is required');
-    }
-    if (!treatmentData.category) {
-      throw Errors.BadRequest('Category is required');
-    }
-    if (treatmentData.price === undefined || treatmentData.price === null) {
-      throw Errors.BadRequest('Price is required');
-    }
-    if (!treatmentData.duration_minutes) {
-      throw Errors.BadRequest('Duration is required');
-    }
-
-    const treatment = await ghlClient.createTreatment(treatmentData);
-
-    const response: ApiResponse<GHLTreatment> = {
-      success: true,
-      data: treatment,
-    };
-
-    res.status(201).json(response);
-  })
-);
-
-/**
- * @route   PUT /api/treatments/:id
- * @desc    Update an existing treatment
- * @access  Private
- */
-router.put(
-  '/:id',
-  authenticate,
-  asyncHandler(async (req: Request, res: Response) => {
-    ghlClient.setApiKey(req.ghlToken!);
-    const { id } = req.params;
-    const treatmentData = req.body;
-    const locationId = req.query.locationId as string | undefined;
-
-    if (!id) {
-      throw Errors.BadRequest('Treatment ID is required');
-    }
-
-    const treatment = await ghlClient.updateTreatment(id, treatmentData, locationId);
-
-    const response: ApiResponse<GHLTreatment> = {
-      success: true,
-      data: treatment,
-    };
-
-    res.json(response);
-  })
-);
-
-/**
- * @route   DELETE /api/treatments/:id
- * @desc    Delete a treatment
- * @access  Private
- */
-router.delete(
-  '/:id',
-  authenticate,
-  asyncHandler(async (req: Request, res: Response) => {
-    ghlClient.setApiKey(req.ghlToken!);
-    const { id } = req.params;
-    const locationId = req.query.locationId as string | undefined;
-
-    if (!id) {
-      throw Errors.BadRequest('Treatment ID is required');
-    }
-
-    await ghlClient.deleteTreatment(id, locationId);
-
-    const response: ApiResponse<null> = {
-      success: true,
-      data: null,
-    };
-
-    res.json(response);
-  })
-);
+// DELETE treatment
+router.delete('/:id', authenticate, asyncHandler(async (req: Request, res: Response) => {
+  await Treatment.findByIdAndDelete(req.params.id);
+  res.json({ success: true, data: null });
+}));
 
 export default router;
