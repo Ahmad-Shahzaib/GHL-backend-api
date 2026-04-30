@@ -123,4 +123,106 @@ router.get(
   })
 );
 
+// ── NEW DETAIL ENDPOINTS ──────────────────────────────────────────────────
+
+/**
+ * Contact-conversion detail: funnel stages + trend data
+ */
+router.get(
+  '/contact-conversion-detail',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    const locationId = await setupLocationToken(req);
+    const kpiData    = await ghlClient.getKpiMetrics(locationId);
+
+    const detail = {
+      totalContacts:        kpiData.totalContacts,
+      totalOpportunities:   kpiData.totalOpportunities,
+      conversionRate:       kpiData.conversionRate,
+      avgTimeToClose:       kpiData.avgTimeToClose,
+      leadVelocity:         kpiData.leadVelocity,
+      opportunityVelocity:  kpiData.opportunityVelocity,
+      contactsTrend:        kpiData.contactsTrend,
+      opportunitiesTrend:   kpiData.opportunitiesTrend,
+      pipelineStats:        kpiData.pipelineStats,
+      dateRange:            kpiData.dateRange,
+    };
+
+    res.json({ success: true, data: detail });
+  })
+);
+
+/**
+ * Opportunity-value distribution: buckets + pipeline breakdown
+ */
+router.get(
+  '/opportunity-value-distribution',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    const locationId = await setupLocationToken(req);
+    const kpiData    = await ghlClient.getKpiMetrics(locationId);
+
+    const detail = {
+      avgOpportunityValue: kpiData.avgOpportunityValue,
+      totalPipelineValue:  kpiData.totalPipelineValue,
+      totalOpportunities:  kpiData.totalOpportunities,
+      pipelineStats:       kpiData.pipelineStats,
+      opportunitiesTrend:  kpiData.opportunitiesTrend,
+      revenueTrend:        kpiData.revenueTrend,
+      dateRange:           kpiData.dateRange,
+    };
+
+    res.json({ success: true, data: detail });
+  })
+);
+
+/**
+ * Pipeline-stages detail: full stage breakdown per pipeline
+ */
+router.get(
+  '/pipeline-stages-detail',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    const locationId    = await setupLocationToken(req);
+    const stats         = await ghlClient.getDashboardStats(locationId);
+    const kpiData       = await ghlClient.getKpiMetrics(locationId);
+
+    const detail = {
+      pipelineSummary: stats.pipelineSummary,
+      pipelineStats:   kpiData.pipelineStats,
+      totalPipelines:  stats.pipelineSummary.length,
+      totalStages:     stats.pipelineSummary.reduce(
+        (acc, p) => acc + Object.keys(p.stageCounts || {}).length, 0
+      ),
+    };
+
+    res.json({ success: true, data: detail });
+  })
+);
+
+/**
+ * Daily-revenue trend with statistics
+ */
+router.get(
+  '/revenue-detail',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    const locationId  = await setupLocationToken(req);
+    const days        = parseInt(req.query.days as string) || 30;
+    const dailyRevenue = await ghlClient.getDailyRevenue({ locationId, days });
+    const kpiData      = await ghlClient.getKpiMetrics(locationId);
+
+    const detail = {
+      dailyRevenue,
+      totalRevenue:      kpiData.totalRevenue,
+      avgRevenuePerHour: kpiData.avgRevenuePerHour,
+      profitDensity:     kpiData.profitDensity,
+      revenueTrend:      kpiData.revenueTrend,
+      dateRange:         kpiData.dateRange,
+    };
+
+    res.json({ success: true, data: detail });
+  })
+);
+
 export default router;

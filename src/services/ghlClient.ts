@@ -134,24 +134,28 @@ export class GHLClient {
     }
   }
 
-  async refreshAccessToken(refreshToken: string): Promise<GHLTokenResponse> {
-    try {
-      const requestData: GHLTokenRequest = {
-        client_id:     config.GHL_CLIENT_ID,
-        client_secret: config.GHL_CLIENT_SECRET,
-        grant_type:    'refresh_token',
-        refresh_token: refreshToken,
-        user_type:     'Location',
-        redirect_uri:  config.GHL_REDIRECT_URI,
-      };
-      const response = await axios.post<GHLTokenResponse>(GHL_OAUTH_URLS.token, requestData);
-      logger.info('Successfully refreshed access token');
-      return response.data;
-    } catch (error) {
-      logger.error('Token refresh failed:', error);
-      throw this.handleError(error as AxiosError);
-    }
+ async refreshAccessToken(refreshToken: string): Promise<GHLTokenResponse> {
+  try {
+    const params = new URLSearchParams({
+      client_id:     config.GHL_CLIENT_ID,
+      client_secret: config.GHL_CLIENT_SECRET,
+      grant_type:    'refresh_token',
+      refresh_token: refreshToken,
+      user_type:     'Location',
+      redirect_uri:  config.GHL_REDIRECT_URI,
+    });
+    const response = await axios.post<GHLTokenResponse>(
+      GHL_OAUTH_URLS.token,
+      params.toString(),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+    logger.info('Successfully refreshed access token');
+    return response.data;
+  } catch (error) {
+    logger.error('Token refresh failed:', error);
+    throw this.handleError(error as AxiosError);
   }
+}
 
   async storeTokens(tokenData: GHLTokenResponse): Promise<void> {
     const key = tokenData.locationId || tokenData.companyId || tokenData.userId || 'default';
@@ -496,6 +500,17 @@ export class GHLClient {
       url: GHL_API_ENDPOINTS.calendarById(calendarId),
     });
   }
+  
+  async getFreeSlots(calendarId: string, params: { startDate: string; endDate: string; userId?: string; }): Promise<any> {
+    const queryParams = new URLSearchParams({
+      startDate: params.startDate,
+      endDate: params.endDate,
+    });
+    if (params.userId) queryParams.append('userId', params.userId);
+    
+    const url = `${GHL_API_ENDPOINTS.freeSlots(calendarId)}?${queryParams.toString()}`;
+    return this.makeRequest<any>({ method: 'GET', url });
+  }
 
   async getAppointments(params?: {
     locationId?: string;
@@ -658,11 +673,20 @@ export class GHLClient {
     try {
       const opportunitiesResponse = await this.getOpportunities({ limit: 100, locationId: effectiveLocationId });
       opportunities = opportunitiesResponse.opportunities || [];
+      logger.info(`Dashboard Stats: Fetched ${opportunities.length} opportunities`);
+      if (opportunities.length > 0) {
+        logger.info(`First opportunity: ${JSON.stringify(opportunities[0], null, 2)}`);
+      }
     } catch (error) {
       logger.warn('Could not fetch opportunities:', error);
     }
 
-    const totalOpportunityValue = opportunities.reduce((sum, opp) => sum + (opp.monetaryValue || 0), 0);
+    const totalOpportunityValue = opportunities.reduce((sum, opp) => {
+      const val = opp.monetaryValue || 0;
+      return sum + val;
+    }, 0);
+    
+    logger.info(`Dashboard Stats: totalOpportunityValue = ${totalOpportunityValue}`);
 
     const recentContacts = contacts
       .sort((a, b) => new Date(b.dateAdded || 0).getTime() - new Date(a.dateAdded || 0).getTime())
@@ -685,7 +709,12 @@ export class GHLClient {
       const pipeline   = pipelineMap.get(opp.pipelineId || '')!;
       const stageCount = pipeline.stages.get(opp.stageId || '') || 0;
       pipeline.stages.set(opp.stageId || '', stageCount + 1);
-      pipeline.value += opp.monetaryValue || 0;
+      
+      // Try multiple field names for monetary value
+      const oppValue = (opp as any).monetaryValue || (opp as any).value || (opp as any).amount || 0;
+      pipeline.value += oppValue;
+      
+      logger.info(`Opp ${opp.id}: monetaryValue=${(opp as any).monetaryValue}, value=${(opp as any).value}, amount=${(opp as any).amount}, customFields=${JSON.stringify((opp as any).customFields)}`);
     });
 
     const pipelineSummary = Array.from(pipelineMap.entries()).map(([id, data]) => ({
@@ -722,10 +751,10 @@ export class GHLClient {
     const endDate      = dateRange?.endDate   || now.toISOString();
 
     const [contactsResponse, opportunitiesResponse, pipelinesResponse, appointmentsResponse] = await Promise.all([
-      this.getContacts({ limit: 500, locationId: effectiveLocationId }).catch(() => ({ contacts: [], meta: { total: 0 } })),
-      this.getOpportunities({ limit: 500, locationId: effectiveLocationId }).catch(() => ({ opportunities: [], meta: { total: 0 } })),
+      this.getContacts({ limit: 100, locationId: effectiveLocationId }).catch(() => ({ contacts: [], meta: { total: 0 } })),
+      this.getOpportunities({ limit: 100, locationId: effectiveLocationId }).catch(() => ({ opportunities: [], meta: { total: 0 } })),
       this.getPipelines(effectiveLocationId).catch(() => ({ pipelines: [] })),
-      this.getAppointments({ locationId: effectiveLocationId, limit: 200 }).catch(() => ({ events: [], meta: { total: 0 } })),
+      this.getAppointments({ locationId: effectiveLocationId, limit: 100 }).catch(() => ({ events: [], meta: { total: 0 } })),
     ]);
 
     const contacts      = contactsResponse.contacts      || [];
@@ -841,7 +870,7 @@ export class GHLClient {
     items.forEach(item => {
       const date = item[dateField];
       if (date) {
-        const dateKey = new Date(date).toISOString().split('T')[0];
+        const dateKey = this.toLocalDateString(new Date(date));
         dailyCounts.set(dateKey, (dailyCounts.get(dateKey) || 0) + 1);
       }
     });
@@ -850,7 +879,7 @@ export class GHLClient {
     const current = new Date(startDate);
     const end     = new Date(endDate);
     while (current <= end) {
-      const dateKey = current.toISOString().split('T')[0];
+      const dateKey = this.toLocalDateString(current);
       result.push({ date: dateKey, count: dailyCounts.get(dateKey) || 0 });
       current.setDate(current.getDate() + 1);
     }
@@ -862,7 +891,7 @@ export class GHLClient {
     opportunities.forEach(opp => {
       const date = opp.dateAdded;
       if (date) {
-        const dateKey  = new Date(date).toISOString().split('T')[0];
+        const dateKey  = this.toLocalDateString(new Date(date));
         const existing = dailyData.get(dateKey) || { count: 0, value: 0 };
         dailyData.set(dateKey, { count: existing.count + 1, value: existing.value + (opp.monetaryValue || 0) });
       }
@@ -872,7 +901,7 @@ export class GHLClient {
     const current = new Date(startDate);
     const end     = new Date(endDate);
     while (current <= end) {
-      const dateKey = current.toISOString().split('T')[0];
+      const dateKey = this.toLocalDateString(current);
       const data    = dailyData.get(dateKey) || { count: 0, value: 0 };
       result.push({ date: dateKey, ...data });
       current.setDate(current.getDate() + 1);
@@ -885,7 +914,7 @@ export class GHLClient {
     opportunities.forEach(opp => {
       const date = opp.dateStatusChanged || opp.dateAdded;
       if (date && (opp.status === 'won' || opp.status === 'closed')) {
-        const dateKey = new Date(date).toISOString().split('T')[0];
+        const dateKey = this.toLocalDateString(new Date(date));
         dailyRevenue.set(dateKey, (dailyRevenue.get(dateKey) || 0) + (opp.monetaryValue || 0));
       }
     });
@@ -894,7 +923,7 @@ export class GHLClient {
     const current = new Date(startDate);
     const end     = new Date(endDate);
     while (current <= end) {
-      const dateKey = current.toISOString().split('T')[0];
+      const dateKey = this.toLocalDateString(current);
       result.push({ date: dateKey, revenue: dailyRevenue.get(dateKey) || 0 });
       current.setDate(current.getDate() + 1);
     }
@@ -1118,7 +1147,7 @@ export class GHLClient {
 
     if (roomNames.length === 0) return { rooms: [], hours, data: [], uniqueDays: 0, startDate, endDate };
 
-    const uniqueDaysSet = new Set(appointments.map((a: GHLAppointment) => new Date(a.startTime).toISOString().split('T')[0]));
+    const uniqueDaysSet = new Set(appointments.map((a: GHLAppointment) => this.toLocalDateString(new Date(a.startTime))));
     const uniqueDays    = uniqueDaysSet.size || 1;
 
     const heatmapData: RoomUtilizationHeatmap['data'] = roomNames.map((room: string) => ({
@@ -1160,14 +1189,14 @@ export class GHLClient {
 
     const [appointmentsResponse, opportunitiesResponse, heatmapData] = await Promise.all([
       this.getAppointments({ locationId, startTime: startDate, endTime: endDate, limit: 1000 }).catch(() => ({ events: [], meta: { total: 0 } })),
-      this.getOpportunities({ limit: 500, locationId }).catch(() => ({ opportunities: [], meta: { total: 0 } })),
+      this.getOpportunities({ limit: 100, locationId }).catch(() => ({ opportunities: [], meta: { total: 0 } })),
       this.getRoomUtilizationHeatmap({ locationId, startDate, endDate }).catch(() => ({ rooms: [], hours: [], data: [], uniqueDays: 1 })),
     ]);
 
     const appointments  = appointmentsResponse.events    || [];
     const opportunities = opportunitiesResponse.opportunities || [];
 
-    const uniqueDaysSet = new Set(appointments.map((a: any) => a.startTime ? new Date(a.startTime).toISOString().split('T')[0] : null).filter(Boolean));
+    const uniqueDaysSet = new Set(appointments.map((a: any) => a.startTime ? this.toLocalDateString(new Date(a.startTime)) : null).filter(Boolean));
     const uniqueDays    = uniqueDaysSet.size || 1;
 
     const completedAppointments  = appointments.filter((a: any) => a.status !== 'cancelled' && a.status !== 'no_show' && a.status !== 'canceled');
@@ -1222,38 +1251,74 @@ export class GHLClient {
     try {
       const [appointmentsResponse, opportunitiesResponse] = await Promise.all([
         this.getAppointments({ locationId, startTime: startDate, endTime: endDate, limit: 1000 }),
-        this.getOpportunities({ limit: 500, locationId }),
+        this.getOpportunities({ limit: 100, locationId }), // Fixed: GHL limit is 100
       ]);
 
       const appointments  = appointmentsResponse.events    || [];
       const opportunities = opportunitiesResponse.opportunities || [];
 
+      logger.info(`Revenue By Hour: ${appointments.length} appointments, ${opportunities.length} opportunities`);
+
       const contactRevenueMap = new Map<string, number>();
       opportunities.forEach(opp => {
-        if (opp.contactId) contactRevenueMap.set(opp.contactId, (contactRevenueMap.get(opp.contactId) || 0) + (opp.monetaryValue || 0));
+        const value = (opp as any).monetaryValue || (opp as any).value || (opp as any).amount || 0;
+        if (opp.contactId && value) {
+          contactRevenueMap.set(opp.contactId, (contactRevenueMap.get(opp.contactId) || 0) + value);
+        }
       });
 
       const hourlyRevenue = new Map<number, number>();
       for (let h = 8; h <= 19; h++) hourlyRevenue.set(h, 0);
 
+      // Process Appointments
       appointments.forEach((appt: any) => {
         if (!appt.startTime) return;
         const hour = new Date(appt.startTime).getHours();
         if (hour < 8 || hour > 19) return;
-        let revenue = appt.monetaryValue || appt.revenue || 0;
-        if (!revenue && appt.contactId && contactRevenueMap.has(appt.contactId)) revenue = contactRevenueMap.get(appt.contactId) || 0;
+        let revenue = appt.monetaryValue || appt.revenue || appt.value || appt.amount || 0;
+        if (!revenue && appt.contactId && contactRevenueMap.has(appt.contactId)) {
+          revenue = contactRevenueMap.get(appt.contactId) || 0;
+        }
         hourlyRevenue.set(hour, (hourlyRevenue.get(hour) || 0) + revenue);
       });
 
-      const hours           = Array.from(hourlyRevenue.entries()).map(([hour, revenue]) => ({ hour, label: `${hour}:00`, revenue: Math.round(revenue), isPrime: PRIME_HOURS.includes(hour) }));
+      // Always process opportunities to capture revenue (not just as fallback)
+      opportunities.forEach(opp => {
+        const monetaryValue = (opp as any).monetaryValue || (opp as any).value || (opp as any).amount || 0;
+        if (!monetaryValue || monetaryValue === 0) return;
+        
+        // Use createdAt if dateAdded doesn't exist
+        const dateStr = opp.dateAdded || (opp as any).createdAt || opp.dateUpdated || now.toISOString();
+        const date = new Date(dateStr);
+        const hour = date.getHours();
+        if (hour >= 8 && hour <= 19) {
+          hourlyRevenue.set(hour, (hourlyRevenue.get(hour) || 0) + monetaryValue);
+        }
+      });
+
+      const hours = Array.from(hourlyRevenue.entries()).map(([hour, revenue]) => ({
+        hour,
+        label: `${hour}:00`,
+        revenue: Math.round(revenue),
+        isPrime: PRIME_HOURS.includes(hour)
+      }));
       const primeHoursTotal = hours.filter(h => h.isPrime).reduce((sum, h) => sum + h.revenue, 0);
       const offPeakHoursTotal = hours.filter(h => !h.isPrime).reduce((sum, h) => sum + h.revenue, 0);
+
+      logger.info(`Revenue By Hour Result: primeHoursTotal=${primeHoursTotal}, offPeakHoursTotal=${offPeakHoursTotal}`);
 
       return { hours, primeHoursTotal, offPeakHoursTotal, primeHours: PRIME_HOURS };
     } catch (error) {
       logger.warn('Failed to get revenue by hour:', error);
       return { hours: Array.from({ length: 12 }, (_, i) => ({ hour: i + 8, label: `${i + 8}:00`, revenue: 0, isPrime: PRIME_HOURS.includes(i + 8) })), primeHoursTotal: 0, offPeakHoursTotal: 0, primeHours: PRIME_HOURS };
     }
+  }
+
+  private toLocalDateString(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 
   async getDailyRevenue(params?: { locationId?: string; days?: number; }): Promise<any> {
@@ -1265,44 +1330,115 @@ export class GHLClient {
     try {
       const [appointmentsResponse, opportunitiesResponse] = await Promise.all([
         this.getAppointments({ locationId, startTime: startDate.toISOString(), endTime: now.toISOString(), limit: 1000 }),
-        this.getOpportunities({ limit: 500, locationId }),
+        this.getOpportunities({ limit: 100, locationId }), // Fixed: GHL limit is 100, not 500
       ]);
 
       const appointments  = appointmentsResponse.events    || [];
       const opportunities = opportunitiesResponse.opportunities || [];
 
+      logger.info(`=== DAILY REVENUE DEBUG ===`);
+      logger.info(`Appointments: ${appointments.length}, Opportunities: ${opportunities.length}`);
+      
+      if (opportunities.length > 0) {
+        logger.info(`First opportunity keys: ${Object.keys(opportunities[0])}`);
+        logger.info(`First opportunity data: ${JSON.stringify(opportunities[0], null, 2)}`);
+        
+        // Check all opportunities for any monetary value fields
+        opportunities.forEach((opp, idx) => {
+          const monetaryValue = (opp as any).monetaryValue || (opp as any).value || (opp as any).amount || 0;
+          logger.info(`Opp ${idx}: id=${opp.id}, name=${opp.name}, monetaryValue=${(opp as any).monetaryValue}, value=${(opp as any).value}, amount=${(opp as any).amount}, dateAdded=${opp.dateAdded}, createdAt=${(opp as any).createdAt}`);
+          
+          // Check custom fields for value
+          if ((opp as any).customFields && (opp as any).customFields.length > 0) {
+            logger.info(`  Custom fields: ${JSON.stringify((opp as any).customFields)}`);
+          }
+        });
+      }
+
+      // Map contactId -> total monetary value from opportunities
       const contactRevenueMap = new Map<string, number>();
       opportunities.forEach(opp => {
-        if (opp.contactId) contactRevenueMap.set(opp.contactId, (contactRevenueMap.get(opp.contactId) || 0) + (opp.monetaryValue || 0));
+        // Try multiple field names
+        const value = (opp as any).monetaryValue || (opp as any).value || (opp as any).amount || 0;
+        if (opp.contactId && value) {
+          contactRevenueMap.set(opp.contactId, (contactRevenueMap.get(opp.contactId) || 0) + value);
+        }
       });
 
+      // Build dailyData with local date keys
       const dailyData = new Map<string, { revenue: number; appointmentCount: number }>();
       for (let d = 0; d < days; d++) {
-        const date    = new Date(startDate.getTime() + d * 24 * 60 * 60 * 1000);
-        const dateKey = date.toISOString().split('T')[0];
+        const date = new Date(startDate.getTime() + d * 24 * 60 * 60 * 1000);
+        const dateKey = this.toLocalDateString(date);
         dailyData.set(dateKey, { revenue: 0, appointmentCount: 0 });
       }
 
+      // Process appointments – use local date
       appointments.forEach((appt: any) => {
         if (!appt.startTime) return;
-        const dateKey = new Date(appt.startTime).toISOString().split('T')[0];
+        const apptDate = new Date(appt.startTime);
+        const dateKey = this.toLocalDateString(apptDate);
         const dayData = dailyData.get(dateKey);
         if (!dayData) return;
-        let revenue = appt.monetaryValue || appt.revenue || 0;
-        if (!revenue && appt.contactId && contactRevenueMap.has(appt.contactId)) revenue = contactRevenueMap.get(appt.contactId) || 0;
+
+        let revenue = appt.monetaryValue || appt.revenue || appt.value || appt.amount || 0;
+        if (!revenue && appt.contactId && contactRevenueMap.has(appt.contactId)) {
+          revenue = contactRevenueMap.get(appt.contactId) || 0;
+        }
         dayData.revenue += revenue;
         dayData.appointmentCount++;
       });
 
-      const dailyRevenue    = Array.from(dailyData.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([date, data]) => ({ date, revenue: Math.round(data.revenue), appointmentCount: data.appointmentCount }));
-      const totalRevenue    = dailyRevenue.reduce((sum, d) => sum + d.revenue, 0);
+      // Process opportunities – use local date
+      opportunities.forEach(opp => {
+        // Try multiple field names for monetary value
+        const monetaryValue = (opp as any).monetaryValue || (opp as any).value || (opp as any).amount || 0;
+        if (!monetaryValue || monetaryValue === 0) {
+          logger.debug(`Skipping opportunity ${opp.id} - no monetary value`);
+          return;
+        }
+        
+        // Use createdAt if dateAdded doesn't exist
+        const dateStr = opp.dateAdded || (opp as any).createdAt || opp.dateUpdated || now.toISOString();
+        const oppDate = new Date(dateStr);
+        const dateKey = this.toLocalDateString(oppDate);
+        const dayData = dailyData.get(dateKey);
+        
+        logger.info(`Processing opportunity ${opp.id}: value=${monetaryValue}, dateStr=${dateStr}, dateKey=${dateKey}, inRange=${!!dayData}`);
+        
+        if (dayData) {
+          dayData.revenue += monetaryValue;
+          // Only increment appointment count if this opportunity is not already linked to an appointment
+          if (!appointments.find((a: any) => a.contactId === opp.contactId)) {
+            dayData.appointmentCount++;
+          }
+        }
+      });
+
+      const dailyRevenue = Array.from(dailyData.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, data]) => ({
+          date,
+          revenue: Math.round(data.revenue),
+          appointmentCount: data.appointmentCount
+        }));
+
+      const totalRevenue = dailyRevenue.reduce((sum, d) => sum + d.revenue, 0);
       const avgDailyRevenue = dailyRevenue.length > 0 ? Math.round(totalRevenue / dailyRevenue.length) : 0;
-      const bestDay         = dailyRevenue.length > 0 ? dailyRevenue.reduce((best, current) => current.revenue > best.revenue ? current : best, dailyRevenue[0]) : null;
+      const bestDay = dailyRevenue.length > 0 
+        ? dailyRevenue.reduce((best, current) => current.revenue > best.revenue ? current : best, dailyRevenue[0]) 
+        : null;
+
+      logger.info(`=== RESULT: totalRevenue=${totalRevenue}, avgDailyRevenue=${avgDailyRevenue} ===`);
 
       return { dailyRevenue, totalRevenue, avgDailyRevenue, bestDay: bestDay ? { date: bestDay.date, revenue: bestDay.revenue } : null };
     } catch (error) {
       logger.warn('Failed to get daily revenue:', error);
-      const emptyDaily = Array.from({ length: days }, (_, i) => ({ date: new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000).toISOString().split('T')[0], revenue: 0, appointmentCount: 0 }));
+      const emptyDaily = Array.from({ length: days }, (_, i) => ({
+        date: this.toLocalDateString(new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000)),
+        revenue: 0,
+        appointmentCount: 0
+      }));
       return { dailyRevenue: emptyDaily, totalRevenue: 0, avgDailyRevenue: 0, bestDay: null };
     }
   }
@@ -1515,6 +1651,8 @@ export class GHLClient {
     if (error.request) return { status: 0, message: 'No response received from API', error: 'NETWORK_ERROR' };
     return { status: 500, message: error.message || 'Unknown error occurred', error: 'INTERNAL_ERROR' };
   }
+
+  
 }
 
 export const ghlClient = new GHLClient();

@@ -150,6 +150,27 @@ router.get(
 );
 
 router.get(
+  '/free-slots/:calendarId',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    await setupLocationToken(req);
+    const { calendarId } = req.params;
+    const { startDate, endDate, userId } = req.query;
+
+    if (!calendarId) throw Errors.BadRequest('Calendar ID is required');
+    if (!startDate || !endDate) throw Errors.BadRequest('startDate and endDate are required');
+
+    const slots = await ghlClient.getFreeSlots(calendarId, { 
+      startDate: startDate as string, 
+      endDate: endDate as string, 
+      userId: userId as string 
+    });
+    
+    res.json({ success: true, data: slots });
+  })
+);
+
+router.get(
   '/providers',
   authenticate,
   asyncHandler(async (req: Request, res: Response) => {

@@ -13,6 +13,7 @@ import apiRoutes from './src/routes';
 import { connectDB } from './src/db/connection';
 import { ghlClient } from './src/services/ghlClient';
 import { pollingService } from './src/services/pollingService';
+import { tokenRefreshService } from './src/services/tokenRefreshService';
 
 // Initialize Express app
 const app: Application = express();
@@ -94,6 +95,11 @@ const startServer = async (): Promise<void> => {
 
     // Start polling for new sub-accounts every 2 minutes
     pollingService.start(2);
+
+    // Start proactive token refresh — checks every 6 hours, refreshes anything
+    // expiring within 24 hours. Runs immediately on start so a just-expired
+    // token (e.g. after coming back from a long break) is fixed right away.
+    tokenRefreshService.start();
   });
 };
 

@@ -15,6 +15,7 @@ import workflowRoutes from './workflow.routes';
 import reportsRoutes from './reports.routes';
 import alertsRoutes from './alerts.routes';
 import treatmentsRoutes from './treatments.routes';
+import providerOverridesRoutes from './providerOverrides.routes';
 
 
 const router = Router();
@@ -74,6 +75,7 @@ router.get('/', (_req: Request, res: Response) => {
         '/api/reports - Optimization reports and projections routes',
         '/api/alerts - Automation alerts and notifications routes',
         '/api/treatments - Treatment management routes',
+        '/api/provider-overrides - Provider RPH override management',
       ],
     },
   };
@@ -94,5 +96,6 @@ router.use('/workflows', workflowRoutes);
 router.use('/reports', reportsRoutes);
 router.use('/alerts', alertsRoutes);
 router.use('/treatments', treatmentsRoutes);
+router.use('/provider-overrides', providerOverridesRoutes);
 
 export default router;
