@@ -658,82 +658,87 @@ export class GHLClient {
   }
 
   async getDashboardStats(locationId?: string): Promise<GHLDashboardStats> {
-    const effectiveLocationId = locationId || process.env.GHL_LOCATION_ID || '';
+  const effectiveLocationId = locationId || process.env.GHL_LOCATION_ID || '';
+  let contacts: any[]      = [];
+  let opportunities: any[] = [];
+  let pipelineNameMap: Record<string, string> = {};
 
-    let contacts: any[]      = [];
-    let opportunities: any[] = [];
-
-    try {
-      const contactsResponse = await this.getContacts({ limit: 100, locationId: effectiveLocationId });
-      contacts = contactsResponse.contacts || [];
-    } catch (error) {
-      logger.warn('Could not fetch contacts:', error);
-    }
-
-    try {
-      const opportunitiesResponse = await this.getOpportunities({ limit: 100, locationId: effectiveLocationId });
-      opportunities = opportunitiesResponse.opportunities || [];
-      logger.info(`Dashboard Stats: Fetched ${opportunities.length} opportunities`);
-      if (opportunities.length > 0) {
-        logger.info(`First opportunity: ${JSON.stringify(opportunities[0], null, 2)}`);
-      }
-    } catch (error) {
-      logger.warn('Could not fetch opportunities:', error);
-    }
-
-    const totalOpportunityValue = opportunities.reduce((sum, opp) => {
-      const val = opp.monetaryValue || 0;
-      return sum + val;
-    }, 0);
-    
-    logger.info(`Dashboard Stats: totalOpportunityValue = ${totalOpportunityValue}`);
-
-    const recentContacts = contacts
-      .sort((a, b) => new Date(b.dateAdded || 0).getTime() - new Date(a.dateAdded || 0).getTime())
-      .slice(0, 10);
-
-    const recentOpportunities = opportunities
-      .sort((a, b) => new Date(b.dateAdded || 0).getTime() - new Date(a.dateAdded || 0).getTime())
-      .slice(0, 10);
-
-    const pipelineMap = new Map<string, { name: string; stages: Map<string, number>; value: number }>();
-
-    opportunities.forEach(opp => {
-      if (!pipelineMap.has(opp.pipelineId || '')) {
-        pipelineMap.set(opp.pipelineId || '', {
-          name:   opp.pipelineId || 'Unknown',
-          stages: new Map(),
-          value:  0,
-        });
-      }
-      const pipeline   = pipelineMap.get(opp.pipelineId || '')!;
-      const stageCount = pipeline.stages.get(opp.stageId || '') || 0;
-      pipeline.stages.set(opp.stageId || '', stageCount + 1);
-      
-      // Try multiple field names for monetary value
-      const oppValue = (opp as any).monetaryValue || (opp as any).value || (opp as any).amount || 0;
-      pipeline.value += oppValue;
-      
-      logger.info(`Opp ${opp.id}: monetaryValue=${(opp as any).monetaryValue}, value=${(opp as any).value}, amount=${(opp as any).amount}, customFields=${JSON.stringify((opp as any).customFields)}`);
+  // Fetch pipeline names first so we can resolve IDs to display names
+  try {
+    const pipelinesResponse = await this.getPipelines(effectiveLocationId);
+    const pipelines = pipelinesResponse?.pipelines || pipelinesResponse?.data || [];
+    pipelines.forEach((p: any) => {
+      if (p.id && p.name) pipelineNameMap[p.id] = p.name;
     });
-
-    const pipelineSummary = Array.from(pipelineMap.entries()).map(([id, data]) => ({
-      pipelineId:   id,
-      pipelineName: data.name,
-      stageCounts:  Object.fromEntries(data.stages),
-      totalValue:   data.value,
-    }));
-
-    return {
-      totalContacts:        contacts.length,
-      totalOpportunities:   opportunities.length,
-      totalOpportunityValue,
-      totalAppointments:    0,
-      recentContacts,
-      recentOpportunities,
-      pipelineSummary,
-    };
+    logger.info(`Fetched ${pipelines.length} pipelines for name resolution`);
+  } catch (error) {
+    logger.warn('Could not fetch pipelines:', error);
   }
+
+  try {
+    const contactsResponse = await this.getContacts({ limit: 100, locationId: effectiveLocationId });
+    contacts = contactsResponse.contacts || [];
+  } catch (error) {
+    logger.warn('Could not fetch contacts:', error);
+  }
+
+  try {
+    const opportunitiesResponse = await this.getOpportunities({ limit: 100, locationId: effectiveLocationId });
+    opportunities = opportunitiesResponse.opportunities || [];
+    logger.info(`Dashboard Stats: Fetched ${opportunities.length} opportunities`);
+  } catch (error) {
+    logger.warn('Could not fetch opportunities:', error);
+  }
+
+  const totalOpportunityValue = opportunities.reduce((sum, opp) => {
+    return sum + (opp.monetaryValue || 0);
+  }, 0);
+
+  logger.info(`Dashboard Stats: totalOpportunityValue = ${totalOpportunityValue}`);
+
+  const recentContacts = contacts
+    .sort((a, b) => new Date(b.dateAdded || 0).getTime() - new Date(a.dateAdded || 0).getTime())
+    .slice(0, 10);
+
+  const recentOpportunities = opportunities
+    .sort((a, b) => new Date(b.dateAdded || 0).getTime() - new Date(a.dateAdded || 0).getTime())
+    .slice(0, 10);
+
+  const pipelineMap = new Map<string, { name: string; stages: Map<string, number>; value: number }>();
+
+  opportunities.forEach(opp => {
+    const pid = opp.pipelineId || '';
+    if (!pipelineMap.has(pid)) {
+      pipelineMap.set(pid, {
+        // Resolve ID to display name — fall back to "Pipeline 1", "Pipeline 2" etc.
+        name:   pipelineNameMap[pid] || `Pipeline ${pipelineMap.size + 1}`,
+        stages: new Map(),
+        value:  0,
+      });
+    }
+    const pipeline   = pipelineMap.get(pid)!;
+    const stageCount = pipeline.stages.get(opp.stageId || '') || 0;
+    pipeline.stages.set(opp.stageId || '', stageCount + 1);
+    pipeline.value  += (opp as any).monetaryValue || (opp as any).value || (opp as any).amount || 0;
+  });
+
+  const pipelineSummary = Array.from(pipelineMap.entries()).map(([id, data]) => ({
+    pipelineId:   id,
+    pipelineName: data.name,
+    stageCounts:  Object.fromEntries(data.stages),
+    totalValue:   data.value,
+  }));
+
+  return {
+    totalContacts:        contacts.length,
+    totalOpportunities:   opportunities.length,
+    totalOpportunityValue,
+    totalAppointments:    0,
+    recentContacts,
+    recentOpportunities,
+    pipelineSummary,
+  };
+}
 
   async getPipelines(locationId?: string): Promise<any> {
     const effectiveLocationId = locationId || process.env.GHL_LOCATION_ID || '';
@@ -749,46 +754,58 @@ export class GHLClient {
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const startDate    = dateRange?.startDate || thirtyDaysAgo.toISOString();
     const endDate      = dateRange?.endDate   || now.toISOString();
-
     const [contactsResponse, opportunitiesResponse, pipelinesResponse, appointmentsResponse] = await Promise.all([
       this.getContacts({ limit: 100, locationId: effectiveLocationId }).catch(() => ({ contacts: [], meta: { total: 0 } })),
       this.getOpportunities({ limit: 100, locationId: effectiveLocationId }).catch(() => ({ opportunities: [], meta: { total: 0 } })),
       this.getPipelines(effectiveLocationId).catch(() => ({ pipelines: [] })),
       this.getAppointments({ locationId: effectiveLocationId, limit: 100 }).catch(() => ({ events: [], meta: { total: 0 } })),
     ]);
-
     const contacts      = contactsResponse.contacts      || [];
     const opportunities = opportunitiesResponse.opportunities || [];
     const pipelines     = pipelinesResponse.pipelines    || [];
-    const appointments  = appointmentsResponse.events    || [];
-
+    const allAppointments = appointmentsResponse.events || [];
+    const appointments = allAppointments.filter((a: any) => {
+      if (!a.startTime) return false;
+      const t = new Date(a.startTime).getTime();
+      return t >= new Date(startDate).getTime() && t <= new Date(endDate).getTime();
+    });
     const totalContacts      = contacts.length;
     const totalOpportunities = opportunities.length;
     const totalPipelineValue = opportunities.reduce((sum: number, opp: GHLOpportunity) => sum + (opp.monetaryValue || 0), 0);
     const totalAppointments  = appointments.length;
-
     const conversionRate      = totalContacts > 0 ? Math.round((totalOpportunities / totalContacts) * 100) : 0;
     const avgOpportunityValue = totalOpportunities > 0 ? Math.round(totalPipelineValue / totalOpportunities) : 0;
     const pipelineGap         = Math.max(0, 100 - Math.min(100, conversionRate + 10));
     const workingHoursPerMonth = 8 * 22;
     const avgRevenuePerHour   = Math.round(totalPipelineValue / workingHoursPerMonth);
     const profitDensity       = Math.round(avgRevenuePerHour * 0.7);
-
     const pipelineStats      = this.calculatePipelineStats(opportunities, pipelines);
     const contactsTrend      = this.calculateTrendData(contacts, 'dateAdded', startDate, endDate);
     const opportunitiesTrend = this.calculateOpportunityTrend(opportunities, startDate, endDate);
     const revenueTrend       = this.calculateRevenueTrend(opportunities, startDate, endDate);
-
     const daysInPeriod       = Math.max(1, Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24)));
     const leadVelocity       = Math.round((totalContacts / daysInPeriod) * 10) / 10;
     const opportunityVelocity = Math.round((totalOpportunities / daysInPeriod) * 10) / 10;
-
     const wonOpportunities = opportunities.filter((o: GHLOpportunity) => o.status === 'won' || o.status === 'closed');
     const avgTimeToClose   = this.calculateAvgTimeToClose(wonOpportunities);
-
     const metrics     = this.calculateKpiMetrics(conversionRate, avgOpportunityValue, pipelineGap, avgRevenuePerHour, profitDensity);
     const systemScore = this.calculateSystemScore(metrics);
     const healthStatus = systemScore >= 80 ? 'excellent' : systemScore >= 60 ? 'good' : systemScore >= 40 ? 'needs_attention' : 'critical';
+
+    // Calculate uniqueDays from actual appointment dates
+    const uniqueDates = new Set(
+      appointments
+        .filter((a: any) => a.startTime)
+        .map((a: any) => new Date(a.startTime).toISOString().split('T')[0])
+    );
+    const uniqueDays = uniqueDates.size;
+
+    // Calculate total booked hours from actual appointment durations
+    const totalHours = appointments.reduce((sum: number, a: any) => {
+      if (!a.startTime || !a.endTime) return sum;
+      const hrs = (new Date(a.endTime).getTime() - new Date(a.startTime).getTime()) / 3600000;
+      return sum + (hrs > 0 ? hrs : 0);
+    }, 0);
 
     return {
       conversionRate, avgOpportunityValue, pipelineGap, avgRevenuePerHour, profitDensity,
@@ -796,6 +813,8 @@ export class GHLClient {
       totalRevenue: totalPipelineValue, metrics, pipelineStats,
       contactsTrend, opportunitiesTrend, revenueTrend,
       systemScore, healthStatus, avgTimeToClose, leadVelocity, opportunityVelocity,
+      uniqueDays,
+      totalHours: Math.round(totalHours * 10) / 10,
       dateRange: { startDate, endDate },
     };
   }
@@ -1029,156 +1048,7 @@ export class GHLClient {
     if (!effectiveLocationId || !apiKey) throw new Error('Missing locationId or apiKey for updating workflow rules');
     return await workflowRulesService.updateRules(effectiveLocationId, apiKey, rules);
   }
-
-  async analyzeSchedulingViolations(params?: { locationId?: string; startDate?: string; endDate?: string; }): Promise<WorkflowSchedulingViolation[]> {
-    const locationId = params?.locationId || process.env.GHL_LOCATION_ID || '';
-    const cacheKey   = `violations:${locationId}:${params?.startDate || 'all'}:${params?.endDate || 'all'}`;
-
-    const cached = await cacheService.get<WorkflowSchedulingViolation[]>(cacheKey);
-    if (cached) return cached;
-
-    const violations: WorkflowSchedulingViolation[] = [];
-    const PRIME_HOURS = [10, 11, 12, 13, 14, 15, 16, 17];
-
-    try {
-      const rules         = await this.getWorkflowOptimizationRules(locationId);
-      const primeHourRule = rules.find(r => r.type === 'prime_hour_protection' && r.isActive);
-      if (!primeHourRule) return [];
-
-      const appointmentsResponse = await this.getAppointments({ locationId, startTime: params?.startDate, endTime: params?.endDate, limit: 500 });
-      const appointments         = appointmentsResponse.events || [];
-      const effectivePrimeHours  = primeHourRule.config.primeHours || PRIME_HOURS;
-
-      appointments.forEach((appt: any) => {
-        if (!appt.startTime) return;
-        const startTime        = new Date(appt.startTime);
-        const hour             = startTime.getHours();
-        const isPrime          = effectivePrimeHours.includes(hour);
-        const category         = appt.treatment_category || (appt as any).customFields?.treatment_category;
-        const blockedCategories = primeHourRule.config.blockedCategories || ['low_ticket'];
-        if (isPrime && blockedCategories.includes(category)) {
-          violations.push({
-            id:            `violation-${appt.id}`,
-            type:          'prime_hour_violation',
-            detail:        `${appt.title || 'Unknown'} (${category}) booked at ${startTime.toLocaleTimeString()} on ${startTime.toLocaleDateString()}`,
-            room:          appt.appointmentLocation || (appt as any).address1,
-            revenue:       (appt as any).monetaryValue || 0,
-            appointmentId: appt.id,
-            severity:      'medium',
-            detectedAt:    new Date().toISOString(),
-          });
-        }
-      });
-
-      await cacheService.set(cacheKey, violations, 2 * 60 * 1000);
-      return violations;
-    } catch (error) {
-      logger.warn('Failed to analyze scheduling violations:', error);
-      return [];
-    }
-  }
-
-  async getScheduleBlocks(params?: { locationId?: string; date?: string; }): Promise<WorkflowScheduleBlock[]> {
-    const locationId  = params?.locationId || process.env.GHL_LOCATION_ID || '';
-    const cacheKey    = `schedule_blocks:${locationId}:${params?.date || 'today'}`;
-    const cached      = await cacheService.get<WorkflowScheduleBlock[]>(cacheKey);
-    if (cached) return cached;
-
-    const PRIME_HOURS  = [10, 11, 12, 13, 14, 15, 16, 17];
-    const HOUR_LABELS  = Array.from({ length: 13 }, (_, i) => `${i + 8}:00`);
-
-    try {
-      const rules            = await this.getWorkflowOptimizationRules(locationId);
-      const primeHourRule    = rules.find(r => r.type === 'prime_hour_protection');
-      const effectivePrimeHours = primeHourRule?.config?.primeHours || PRIME_HOURS;
-
-      const appointmentsResponse = await this.getAppointments({ locationId, startTime: params?.date ? new Date(params.date).toISOString() : undefined, limit: 500 });
-      const appointments         = appointmentsResponse.events || [];
-
-      const blocks = HOUR_LABELS.map(label => {
-        const hour    = parseInt(label.split(':')[0], 10);
-        const isPrime = effectivePrimeHours.includes(hour);
-        const appts   = appointments.filter((a: any) => a.startTime && new Date(a.startTime).getHours() === hour);
-
-        const highTicket  = appts.filter((a: any) => (a.treatment_category || (a as any).customFields?.treatment_category) === 'high_ticket').length;
-        const lowTicket   = appts.filter((a: any) => (a.treatment_category || (a as any).customFields?.treatment_category) === 'low_ticket').length;
-        const utilization = Math.min(100, (appts.length / 4) * 100);
-
-        return { hour, label, isPrime, total: appts.length, highTicket, lowTicket, utilization };
-      });
-
-      await cacheService.set(cacheKey, blocks, 5 * 60 * 1000);
-      return blocks;
-    } catch (error) {
-      logger.warn('Failed to get schedule blocks:', error);
-      return HOUR_LABELS.map(label => {
-        const hour = parseInt(label.split(':')[0], 10);
-        return { hour, label, isPrime: PRIME_HOURS.includes(hour), total: 0, highTicket: 0, lowTicket: 0, utilization: 0 };
-      });
-    }
-  }
-
-  async getRoomUtilizationHeatmap(params?: RoomHeatmapQueryParams): Promise<RoomUtilizationHeatmap> {
-    const locationId = params?.locationId || process.env.GHL_LOCATION_ID || '';
-    // Default: last 30 days + next 30 days to include upcoming appointments
-    const now = new Date();
-    const thirtyDaysAgo   = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const thirtyDaysAhead = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-    const startDate  = params?.startDate || thirtyDaysAgo.toISOString();
-    const endDate    = params?.endDate   || thirtyDaysAhead.toISOString();
-    const hours      = params?.hours || Array.from({ length: 12 }, (_, i) => i + 8);
-
-    const [appointmentsResponse, calendarsResponse] = await Promise.all([
-      this.getAppointments({ locationId, startTime: startDate, endTime: endDate, limit: 1000 }),
-      this.getCalendars(locationId).catch(() => ({ calendars: [] })),
-    ]);
-
-    const appointments = appointmentsResponse.events || [];
-    const calendars    = calendarsResponse.calendars || [];
-
-    // Build calendar ID → name map
-    const calendarMap: Record<string, string> = {};
-    calendars.forEach((c: any) => { calendarMap[c.id] = c.name; });
-
-    // Get room names from calendars
-    const roomNames = calendars.length > 0
-      ? calendars.map((c: any) => c.name)
-      : [...new Set(appointments.map((a: any) => a.appointmentLocation || a.address1).filter(Boolean))];
-
-    if (roomNames.length === 0) return { rooms: [], hours, data: [], uniqueDays: 0, startDate, endDate };
-
-    const uniqueDaysSet = new Set(appointments.map((a: GHLAppointment) => this.toLocalDateString(new Date(a.startTime))));
-    const uniqueDays    = uniqueDaysSet.size || 1;
-
-    const heatmapData: RoomUtilizationHeatmap['data'] = roomNames.map((room: string) => ({
-      room, hours: {} as Record<string, { booked: number; revenue: number }>, totalBooked: 0, totalRevenue: 0, utilPct: 0,
-    }));
-
-    heatmapData.forEach(roomData => { hours.forEach(h => { roomData.hours[h] = { booked: 0, revenue: 0 }; }); });
-
-    appointments.forEach((appointment: any) => {
-      // Resolve calendarId to room name
-      const roomName = calendarMap[appointment.calendarId] || appointment.appointmentLocation || appointment.address1;
-      if (!roomName) return;
-      const roomData = heatmapData.find(r => r.room === roomName);
-      if (!roomData) return;
-      const hour = new Date(appointment.startTime).getHours();
-      if (hours.includes(hour)) {
-        roomData.hours[hour].booked++;
-        roomData.hours[hour].revenue += (appointment as any).monetaryValue || 0;
-      }
-    });
-
-    heatmapData.forEach(roomData => {
-      roomData.totalBooked  = hours.reduce((sum, h) => sum + (roomData.hours[h]?.booked  || 0), 0);
-      roomData.totalRevenue = hours.reduce((sum, h) => sum + (roomData.hours[h]?.revenue || 0), 0);
-      const maxPossible     = hours.length * uniqueDays;
-      roomData.utilPct      = maxPossible > 0 ? Math.round((roomData.totalBooked / maxPossible) * 100) : 0;
-    });
-
-    heatmapData.sort((a, b) => b.utilPct - a.utilPct);
-    return { rooms: roomNames, hours, data: heatmapData, uniqueDays, startDate, endDate };
-  }
+  
 
   async getReportsData(params?: { locationId?: string; startDate?: string; endDate?: string; }): Promise<import('../types').ReportsData> {
     const locationId  = params?.locationId || process.env.GHL_LOCATION_ID || '';
@@ -1193,8 +1063,14 @@ export class GHLClient {
       this.getRoomUtilizationHeatmap({ locationId, startDate, endDate }).catch(() => ({ rooms: [], hours: [], data: [], uniqueDays: 1 })),
     ]);
 
-    const appointments  = appointmentsResponse.events    || [];
+    const allAppointments = appointmentsResponse.events || [];
+    const appointments = allAppointments.filter((a: any) => {
+      if (!a.startTime) return false;
+      const t = new Date(a.startTime).getTime();
+      return t >= new Date(startDate).getTime() && t <= new Date(endDate).getTime();
+    });
     const opportunities = opportunitiesResponse.opportunities || [];
+    
 
     const uniqueDaysSet = new Set(appointments.map((a: any) => a.startTime ? this.toLocalDateString(new Date(a.startTime)) : null).filter(Boolean));
     const uniqueDays    = uniqueDaysSet.size || 1;
@@ -1220,9 +1096,10 @@ export class GHLClient {
     const avgRevenuePerAppointment = completedAppointments.length > 0 ? Math.round(totalRevenue / completedAppointments.length) : 0;
     const avgRevenuePerHour     = Math.round(totalRevenue / (uniqueDays * 8));
     const avgRevenuePerDay      = Math.round(dailyRevenue);
-    const utilIncrease          = Math.round(annualBase * 0.22);
-    const primeIncrease         = Math.round(annualBase * 0.18);
-    const combinedLift          = Math.round(annualBase * 0.35);
+    const hasEnoughData = appointments.length >= 5 && uniqueDays >= 2;
+    const utilIncrease  = hasEnoughData ? Math.round(annualBase * 0.22) : 0;
+    const primeIncrease = hasEnoughData ? Math.round(annualBase * 0.18) : 0;
+    const combinedLift  = hasEnoughData ? Math.round(annualBase * 0.35) : 0;
 
     const successMetrics = [
       { metric: 'Room Utilization',          target: '+15–30% increase',    current: `${avgUtilization}% current`,       status: avgUtilization >= 65        ? 'on_track' as const : avgUtilization >= 45        ? 'needs_attention' as const : 'critical' as const },
@@ -1235,7 +1112,7 @@ export class GHLClient {
       currentAnnual: Math.round(annualBase), totalRevenue: Math.round(totalRevenue),
       totalAppointments: appointments.length, completedAppointments: completedAppointments.length, cancelledAppointments: cancelledAppointments.length,
       avgUtilization, primeHourUtilization, idleTimePercentage, avgRevenuePerAppointment, avgRevenuePerHour, avgRevenuePerDay,
-      projections: { utilIncrease, primeIncrease, combinedLift, capacityIncrease: 22, idleReduction: 28, primeHQIncrease: 20, totalUpside: combinedLift },
+      projections: { utilIncrease, primeIncrease, combinedLift, capacityIncrease: hasEnoughData ? 22 : 0, idleReduction: hasEnoughData ? 28 : 0, primeHQIncrease: hasEnoughData ? 20 : 0, totalUpside: combinedLift },
       successMetrics, dateRange: { startDate, endDate }, uniqueDays,
     };
   }
@@ -1652,6 +1529,262 @@ export class GHLClient {
     return { status: 500, message: error.message || 'Unknown error occurred', error: 'INTERNAL_ERROR' };
   }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ADD THESE 3 METHODS TO ghlClient.ts inside the GHLClient class
+// Place them just before the closing brace of the class
+// ─────────────────────────────────────────────────────────────────────────────
+
+  // ── Room Utilization Heatmap ───────────────────────────────────────────────
+  async getRoomUtilizationHeatmap(params?: {
+    locationId?: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<any> {
+    const locationId    = params?.locationId || process.env.GHL_LOCATION_ID || '';
+    const now           = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const startDate     = params?.startDate || thirtyDaysAgo.toISOString();
+    const endDate       = params?.endDate   || now.toISOString();
+    const PRIME_HOURS   = [10, 11, 12, 13, 14, 15, 16, 17];
+
+    try {
+      // Fetch appointments and opportunities in parallel
+      const [appointmentsResponse, opportunitiesResponse, calendarsResponse] = await Promise.all([
+        this.getAppointments({ locationId, startTime: startDate, endTime: endDate, limit: 500 }).catch(() => ({ events: [] })),
+        this.getOpportunities({ limit: 100, locationId }).catch(() => ({ opportunities: [] })),
+        this.getCalendars(locationId).catch(() => ({ calendars: [] })),
+      ]);
+
+      const appointments  = appointmentsResponse.events        || [];
+      const opportunities = opportunitiesResponse.opportunities || [];
+      const calendars     = calendarsResponse.calendars         || [];
+
+      // Build contactId → revenue map from opportunities
+      const contactRevenueMap = new Map<string, number>();
+      opportunities.forEach((opp: any) => {
+        const value = opp.monetaryValue || opp.value || opp.amount || 0;
+        if (opp.contactId && value > 0) {
+          contactRevenueMap.set(opp.contactId, (contactRevenueMap.get(opp.contactId) || 0) + value);
+        }
+      });
+
+      // Build calendarId → name map for room names
+      const calendarNameMap = new Map<string, string>();
+      calendars.forEach((c: any) => { if (c.id && c.name) calendarNameMap.set(c.id, c.name); });
+
+      // Group appointments by room (calendar) and hour
+      const roomHourMap = new Map<string, Map<number, { booked: number; revenue: number }>>();
+      const uniqueDates  = new Set<string>();
+
+      appointments.forEach((appt: any) => {
+      if (!appt.startTime) return;
+
+      // Filter by selected date range
+      const apptTime  = new Date(appt.startTime).getTime();
+      const rangeStart = new Date(startDate).getTime();
+      const rangeEnd   = new Date(endDate).getTime();
+      if (apptTime < rangeStart || apptTime > rangeEnd) return;
+
+      const start   = new Date(appt.startTime);
+      const hour    = start.getHours();
+      const dateStr = start.toISOString().split('T')[0];
+
+        if (hour < 8 || hour > 19) return;
+        uniqueDates.add(dateStr);
+
+        // Resolve room name from calendarId
+        const roomName = calendarNameMap.get(appt.calendarId) || appt.calendarId || 'Unknown Room';
+
+        // Get revenue — from appointment directly or from opportunity via contactId
+        let revenue = appt.monetaryValue || appt.revenue || appt.value || 0;
+        if (!revenue && appt.contactId) {
+          revenue = contactRevenueMap.get(appt.contactId) || 0;
+        }
+
+        if (!roomHourMap.has(roomName)) roomHourMap.set(roomName, new Map());
+        const hourMap = roomHourMap.get(roomName)!;
+        const existing = hourMap.get(hour) || { booked: 0, revenue: 0 };
+        hourMap.set(hour, { booked: existing.booked + 1, revenue: existing.revenue + revenue });
+      });
+
+      const uniqueDays = Math.max(1, uniqueDates.size);
+      const rooms      = Array.from(roomHourMap.keys());
+
+      // Build structured data per room
+      const data = rooms.map(room => {
+        const hourMap    = roomHourMap.get(room)!;
+        const hours: Record<string, { booked: number; revenue: number }> = {};
+        let totalBooked  = 0;
+        let totalRevenue = 0;
+
+        for (let h = 8; h <= 19; h++) {
+          const hData = hourMap.get(h) || { booked: 0, revenue: 0 };
+          hours[h]     = hData;
+          totalBooked  += hData.booked;
+          totalRevenue += hData.revenue;
+        }
+
+        const totalSlots = uniqueDays * 12; // 12 working hours per day
+        const utilPct    = totalSlots > 0 ? Math.min(100, Math.round((totalBooked / totalSlots) * 100)) : 0;
+
+        return { room, hours, totalBooked, totalRevenue: Math.round(totalRevenue), utilPct };
+      });
+
+      logger.info(`RoomHeatmap: ${rooms.length} rooms, ${appointments.length} appointments, ${uniqueDays} days`);
+
+      return {
+        rooms,
+        uniqueDays,
+        data,
+        primeHours: PRIME_HOURS,
+        dateRange:  { startDate, endDate },
+      };
+
+    } catch (error: any) {
+      logger.error('getRoomUtilizationHeatmap failed:', error?.message);
+      return { rooms: [], uniqueDays: 0, data: [], primeHours: PRIME_HOURS, dateRange: { startDate, endDate } };
+    }
+  }
+
+  // ── Scheduling Violations ─────────────────────────────────────────────────
+  async analyzeSchedulingViolations(params?: {
+    locationId?: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<any[]> {
+    const locationId    = params?.locationId || process.env.GHL_LOCATION_ID || '';
+    const now           = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const startDate     = params?.startDate || thirtyDaysAgo.toISOString();
+    const endDate       = params?.endDate   || now.toISOString();
+    const PRIME_HOURS   = [10, 11, 12, 13, 14, 15, 16, 17];
+
+    try {
+      const [appointmentsResponse, opportunitiesResponse] = await Promise.all([
+        this.getAppointments({ locationId, startTime: startDate, endTime: endDate, limit: 500 }).catch(() => ({ events: [] })),
+        this.getOpportunities({ limit: 100, locationId }).catch(() => ({ opportunities: [] })),
+      ]);
+
+      const appointments  = appointmentsResponse.events        || [];
+      const opportunities = opportunitiesResponse.opportunities || [];
+
+      // Build revenue map
+      const contactRevenueMap = new Map<string, number>();
+      opportunities.forEach((opp: any) => {
+        const value = opp.monetaryValue || opp.value || 0;
+        if (opp.contactId && value > 0) contactRevenueMap.set(opp.contactId, value);
+      });
+
+      const violations: any[] = [];
+
+      appointments.forEach((appt: any) => {
+        if (!appt.startTime) return;
+        const start    = new Date(appt.startTime);
+        const hour     = start.getHours();
+        const isPrime  = PRIME_HOURS.includes(hour);
+        const title    = appt.title || 'Appointment';
+        const revenue  = appt.monetaryValue || (appt.contactId ? contactRevenueMap.get(appt.contactId) || 0 : 0);
+        const rph      = revenue > 0 && appt.startTime && appt.endTime
+          ? Math.round((revenue / ((new Date(appt.endTime).getTime() - new Date(appt.startTime).getTime()) / 3600000)))
+          : 0;
+
+        // Violation: low-value appointment in prime hour
+        if (isPrime && rph > 0 && rph < 300) {
+          violations.push({
+            id:            `violation-${appt.id}`,
+            violationType: 'Prime-Hour Low-Value',
+            type:          'Prime-Hour Low-Value',
+            description:   `"${title}" is in a prime slot (${hour}:00) but generates only $${rph}/hr RPH`,
+            detail:        `"${title}" is in a prime slot (${hour}:00) but generates only $${rph}/hr RPH`,
+            severity:      rph < 200 ? 'critical' : 'warning',
+            room:          appt.calendarId || 'Unknown',
+            hour,
+            revenue,
+            revenueImpact: revenue,
+            date:          start.toISOString().split('T')[0],
+          });
+        }
+      });
+
+      logger.info(`analyzeSchedulingViolations: ${violations.length} violations found from ${appointments.length} appointments`);
+      return violations;
+
+    } catch (error: any) {
+      logger.error('analyzeSchedulingViolations failed:', error?.message);
+      return [];
+    }
+  }
+
+  // ── Schedule Blocks ───────────────────────────────────────────────────────
+  async getScheduleBlocks(params?: {
+    locationId?: string;
+    date?: string;
+  }): Promise<any[]> {
+    const locationId = params?.locationId || process.env.GHL_LOCATION_ID || '';
+    const PRIME_HOURS = [10, 11, 12, 13, 14, 15, 16, 17];
+
+    try {
+      const now           = new Date();
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      const [appointmentsResponse, opportunitiesResponse] = await Promise.all([
+        this.getAppointments({ locationId, startTime: thirtyDaysAgo.toISOString(), endTime: now.toISOString(), limit: 500 }).catch(() => ({ events: [] })),
+        this.getOpportunities({ limit: 100, locationId }).catch(() => ({ opportunities: [] })),
+      ]);
+
+      const appointments  = appointmentsResponse.events        || [];
+      const opportunities = opportunitiesResponse.opportunities || [];
+
+      // Build revenue map
+      const contactRevenueMap = new Map<string, number>();
+      opportunities.forEach((opp: any) => {
+        const value = opp.monetaryValue || opp.value || 0;
+        if (opp.contactId && value > 0) contactRevenueMap.set(opp.contactId, value);
+      });
+
+      // Aggregate appointments by hour
+      const hourMap = new Map<number, { total: number; highTicket: number; lowTicket: number; revenue: number }>();
+      for (let h = 8; h <= 20; h++) hourMap.set(h, { total: 0, highTicket: 0, lowTicket: 0, revenue: 0 });
+
+      appointments.forEach((appt: any) => {
+        if (!appt.startTime) return;
+        const hour    = new Date(appt.startTime).getHours();
+        if (hour < 8 || hour > 20) return;
+        const revenue = appt.monetaryValue || (appt.contactId ? contactRevenueMap.get(appt.contactId) || 0 : 0);
+        const rph     = revenue > 0 && appt.startTime && appt.endTime
+          ? revenue / ((new Date(appt.endTime).getTime() - new Date(appt.startTime).getTime()) / 3600000)
+          : 0;
+
+        const existing = hourMap.get(hour)!;
+        hourMap.set(hour, {
+          total:      existing.total + 1,
+          highTicket: existing.highTicket + (rph >= 500 ? 1 : 0),
+          lowTicket:  existing.lowTicket  + (rph > 0 && rph < 300 ? 1 : 0),
+          revenue:    existing.revenue + revenue,
+        });
+      });
+
+      const blocks = Array.from(hourMap.entries()).map(([hour, data]) => ({
+        hour,
+        label:      `${hour}:00`,
+        isPrime:    PRIME_HOURS.includes(hour),
+        total:      data.total,
+        highTicket: data.highTicket,
+        lowTicket:  data.lowTicket,
+        revenue:    Math.round(data.revenue),
+        utilization: Math.min(100, data.total * 20), // rough utilization estimate
+      }));
+
+      logger.info(`getScheduleBlocks: ${blocks.length} hour blocks built from ${appointments.length} appointments`);
+      return blocks;
+
+    } catch (error: any) {
+      logger.error('getScheduleBlocks failed:', error?.message);
+      return [];
+    }
+  }
+
+  
   
 }
 
