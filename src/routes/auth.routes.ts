@@ -6,6 +6,7 @@ import { authRateLimiter } from '../middleware/security';
 import { ApiResponse } from '../types';
 import { logger } from '../utils/logger';
 import { User } from '../models/User';
+import { ghlClient } from '../services/ghlClient';
 
 const router = Router();
 
@@ -422,6 +423,28 @@ router.post(
     logger.info(`Pre-registered email: ${email}`);
     const response: ApiResponse<{ saved: boolean }> = { success: true, data: { saved: true } };
     res.json(response);
+  })
+);
+
+/**
+ * @route   POST /api/auth/generate-location-token
+ * @desc    Generate and store a location token for a sub-account using company token
+ * @access  Private
+ */
+router.post(
+  '/generate-location-token',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { locationId, companyId } = req.body;
+    if (!locationId) throw Errors.BadRequest('locationId is required');
+
+    const cId = companyId || 'K9bORvG0pKtvt7QO4R9B';
+    try {
+      const token = await ghlClient.getLocationToken(cId, locationId);
+      res.json({ success: true, data: { locationId, token: token?.substring(0, 20) + '...' } });
+    } catch (err: any) {
+      logger.error('Failed to generate location token:', err);
+      res.status(500).json({ success: false, error: err?.message || 'Failed to generate location token' });
+    }
   })
 );
 

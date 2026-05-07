@@ -14,7 +14,7 @@ import { logger } from '../utils/logger';
  */
 export const setupLocationToken = async (req: Request): Promise<string | undefined> => {
   const locationId = (req.user?.locationId || req.query.locationId) as string | undefined;
-  const companyId  = req.user?.companyId || 'K9bORvG0pKtvt7QO4R9B';
+  const companyId  = (req.query.companyId as string) || req.user?.companyId || 'K9bORvG0pKtvt7QO4R9B';
 
   logger.info('setupLocationToken called', { locationId, companyId });
 

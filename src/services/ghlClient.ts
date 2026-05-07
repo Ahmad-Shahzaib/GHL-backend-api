@@ -358,11 +358,85 @@ export class GHLClient {
     limit?: number;
     page?: number;
     locationId?: string;
+    companyId?: string;
   }): Promise<GHLUsersResponse> {
+    // GHL /users/ endpoint does NOT accept limit, page, or location_id params
+    // Only locationId (camelCase) is accepted
     const queryParams = new URLSearchParams();
     if (params?.locationId) queryParams.append('locationId', params.locationId);
     const url = `/users/?${queryParams.toString()}`;
-    return this.makeRequest<GHLUsersResponse>({ method: 'GET', url });
+
+    // Strategy 1: Use Private Integration token (pit-) for the location — has users scope
+    if (params?.locationId) {
+      const pitTokenData = await tokenStore.getTokens(params.locationId);
+      if (pitTokenData?.accessToken) {
+        try {
+          const pitResponse = await this.axiosInstance.request<GHLUsersResponse>({
+            method: 'GET',
+            url,
+            headers: { Authorization: `Bearer ${pitTokenData.accessToken}` },
+          });
+          const pitUsers = pitResponse.data;
+          logger.info('getUsers via pit- token', {
+            locationId: params.locationId,
+            usersLength: Array.isArray(pitUsers.users) ? pitUsers.users.length : 0,
+          });
+          if ((pitUsers.users || []).length > 0) return pitUsers;
+        } catch (err: any) {
+          logger.warn('getUsers pit- token failed, trying fallbacks', {
+            locationId: params.locationId,
+            status: err?.response?.status,
+          });
+        }
+      }
+    }
+
+    // Strategy 2: Use current token (Company OAuth) — may 401 if scope missing
+    try {
+      const locationUsers = await this.makeRequest<GHLUsersResponse>({ method: 'GET', url });
+      logger.info('getUsers company-token response', {
+        locationId: params?.locationId,
+        usersLength: Array.isArray(locationUsers.users) ? locationUsers.users.length : 0,
+      });
+      if ((locationUsers.users || []).length > 0) return locationUsers;
+    } catch (err: any) {
+      logger.warn('getUsers company-token failed', { status: err?.response?.status });
+    }
+
+    // Strategy 3: Search endpoint with company token
+    if (params?.locationId && params?.companyId) {
+      const companyTokenData = await tokenStore.getTokens(params.companyId);
+      if (companyTokenData?.accessToken) {
+        try {
+          const searchParams = new URLSearchParams();
+          searchParams.append('companyId', params.companyId);
+          searchParams.append('locationId', params.locationId);
+
+          const response = await this.axiosInstance.request<GHLUsersResponse>({
+            method: 'GET',
+            url: `/users/search?${searchParams.toString()}`,
+            headers: { Authorization: `Bearer ${companyTokenData.accessToken}` },
+          });
+          logger.info('getUsers company search-endpoint response', {
+            usersLength: Array.isArray(response.data.users) ? response.data.users.length : 0,
+          });
+          if ((response.data.users || []).length > 0) return response.data;
+        } catch (err: any) {
+          logger.warn('getUsers company search-endpoint failed', { status: err?.response?.status });
+        }
+      }
+    }
+
+    logger.warn('getUsers — all strategies exhausted, returning empty', { locationId: params?.locationId });
+    return { users: [], meta: { total: 0, currentPage: 1 } } as unknown as GHLUsersResponse;
+  }
+
+  async getLocationStaffTeam(locationId: string): Promise<any> {
+    const url = `https://app.gohighlevel.com/v2/location/${locationId}/settings/staff/team`;
+    logger.info('Calling GHL location staff/team endpoint', { url, locationId });
+    const response = await this.makeRequest<any>({ method: 'GET', url });
+    logger.info('GHL location staff/team response received', { locationId, response });
+    return response;
   }
 
   async getUser(userId: string): Promise<GHLUser> {

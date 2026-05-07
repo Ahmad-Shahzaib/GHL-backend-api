@@ -177,24 +177,76 @@ router.get(
     const locationId = await setupLocationToken(req);
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
 
+    logger.info('Calendar providers route called', {
+      query: req.query,
+      locationId,
+      userLocationId: req.user?.locationId,
+      userCompanyId: req.user?.companyId,
+    });
+
     let providers: any[] = [];
     let total = 0;
 
     try {
-      const usersResponse = await ghlClient.getUsers({ limit, locationId });
-      providers = (usersResponse.users || []).map((user: any) => ({
-        id:                 user.id,
-        name:               user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim(),
-        email:              user.email,
-        phone:              user.phone || '',
-        role:               user.roles?.role || user.type || 'Provider',
-        type:               user.roles?.type || 'account',
-        availability_start: '09:00',
-        availability_end:   '17:00',
-      }));
-      total = usersResponse.meta?.total || providers.length;
+      const companyId = (req.query.companyId as string) || req.user?.companyId || 'K9bORvG0pKtvt7QO4R9B';
+      logger.info('Fetching providers', { locationId, companyId, limit });
+      let staffTeam: any = [];
+
+      try {
+        staffTeam = await ghlClient.getLocationStaffTeam(locationId || '');
+        logger.info('Location staff/team response', { locationId, staffTeam });
+      } catch (err: any) {
+        logger.warn('Location staff/team fetch failed, falling back to users endpoint:', err?.message || err);
+      }
+
+      const teamData = Array.isArray(staffTeam)
+        ? staffTeam
+        : staffTeam?.data || staffTeam?.teamMembers || [];
+
+      logger.info('Parsed location staff/team data', { teamDataLength: Array.isArray(teamData) ? teamData.length : 0, teamData });
+
+      if (Array.isArray(teamData) && teamData.length > 0) {
+        providers = teamData.map((user: any) => ({
+          id:                 user.id || user.userId || user._id || user.user?.id || '',
+          name:               user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.user?.name || '',
+          email:              user.email || user.user?.email || '',
+          phone:              user.phone || user.user?.phone || '',
+          role:               user.role || user.user?.role || user.type || 'Provider',
+          type:               user.type || user.user?.type || 'account',
+          availability_start: '09:00',
+          availability_end:   '17:00',
+        }));
+        total = providers.length;
+      } else {
+        const usersResponse = await ghlClient.getUsers({ limit, locationId, companyId });
+        logger.info('getUsers fallback response', {
+          locationId,
+          companyId,
+          usersLength: Array.isArray(usersResponse.users) ? usersResponse.users.length : 0,
+          meta: usersResponse.meta,
+          usersSample: (usersResponse.users || []).slice(0, 5),
+        });
+        providers = (usersResponse.users || []).map((user: any) => ({
+          id:                 user.id,
+          name:               user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+          email:              user.email,
+          phone:              user.phone || '',
+          role:               user.roles?.role || user.role || user.type || 'Provider',
+          type:               user.roles?.type || user.type || 'account',
+          availability_start: '09:00',
+          availability_end:   '17:00',
+        }));
+        total = usersResponse.meta?.total || providers.length;
+      }
     } catch (error: any) {
-      logger.warn('Failed to fetch providers from GHL API:', error?.message);
+      logger.warn('Failed to fetch providers from GHL API', {
+        locationId,
+        companyId: (req.query.companyId as string) || req.user?.companyId,
+        query: req.query,
+        error,
+        errorMessage: error?.message,
+        errorStack: error?.stack,
+      });
     }
 
     const response: ApiResponse<typeof providers> = {

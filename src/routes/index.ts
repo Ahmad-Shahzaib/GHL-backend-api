@@ -17,6 +17,7 @@ import alertsRoutes from './alerts.routes';
 import treatmentsRoutes from './treatments.routes';
 import providerOverridesRoutes from './providerOverrides.routes';
 import kpiGoalsRoutes from './kpiGoals.routes';
+import equipmentRoutes from './equipment.routes';
 
 
 const router = Router();
@@ -99,5 +100,6 @@ router.use('/alerts', alertsRoutes);
 router.use('/treatments', treatmentsRoutes);
 router.use('/provider-overrides', providerOverridesRoutes);
 router.use('/kpi-goals', kpiGoalsRoutes);
+router.use('/equipment', equipmentRoutes);
 
 export default router;

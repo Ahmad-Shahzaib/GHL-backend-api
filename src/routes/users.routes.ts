@@ -4,6 +4,7 @@ import { authenticate } from '../middleware/auth';
 import { asyncHandler, Errors } from '../middleware/errorHandler';
 import { ApiResponse, PaginationMeta, GHLUser } from '../types';
 import { logger } from '../utils/logger';
+import { setupLocationToken } from '../utils/setupLocationToken';
 
 const router = Router();
 
@@ -18,12 +19,13 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
-    const locationId = req.query.locationId as string | undefined;
+    const locationId = await setupLocationToken(req);
     
     const usersResponse = await ghlClient.getUsers({
       limit,
       page,
       locationId,
+      companyId: req.user?.companyId || 'K9bORvG0pKtvt7QO4R9B',
     });
     
     const users = usersResponse.users || [];
