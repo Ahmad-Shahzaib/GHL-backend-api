@@ -18,6 +18,7 @@ import treatmentsRoutes from './treatments.routes';
 import providerOverridesRoutes from './providerOverrides.routes';
 import kpiGoalsRoutes from './kpiGoals.routes';
 import equipmentRoutes from './equipment.routes';
+import base44ProxyRoutes from './base44Proxy.routes';
 
 
 const router = Router();
@@ -101,5 +102,6 @@ router.use('/treatments', treatmentsRoutes);
 router.use('/provider-overrides', providerOverridesRoutes);
 router.use('/kpi-goals', kpiGoalsRoutes);
 router.use('/equipment', equipmentRoutes);
+router.use('/base44', base44ProxyRoutes);
 
 export default router;
