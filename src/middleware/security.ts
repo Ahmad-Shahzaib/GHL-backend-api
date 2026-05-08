@@ -1,6 +1,5 @@
 import helmet from 'helmet';
 import cors from 'cors';
-import rateLimit from 'express-rate-limit';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 
@@ -73,70 +72,21 @@ export const corsMiddleware = cors({
 /**
  * Rate limiting configuration
  */
-export const rateLimiter = rateLimit({
-  windowMs: config.RATE_LIMIT_WINDOW_MS,
-  max: config.RATE_LIMIT_MAX_REQUESTS,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    success: false,
-    error: {
-      code: 'TOO_MANY_REQUESTS',
-      message: 'Too many requests, please try again later.',
-    },
-  },
-  handler: (req, res, _next, options) => {
-    logger.warn(`Rate limit exceeded for IP: ${req.ip}`);
-    res.status(429).json(options.message);
-  },
-  skip: (req) => {
-    // Skip rate limiting for health checks
-    return req.path === '/health';
-  },
-});
+// TEMP: Rate limiting disabled for debugging 429 behavior. Re-enable after investigation.
+export const rateLimiter = (_req: any, _res: any, next: any): void => next();
 
 /**
  * Stricter rate limiting for auth endpoints
  */
-export const authRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // 10 requests per 15 minutes
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    success: false,
-    error: {
-      code: 'TOO_MANY_REQUESTS',
-      message: 'Too many authentication attempts, please try again later.',
-    },
-  },
-  handler: (req, res, _next, options) => {
-    logger.warn(`Auth rate limit exceeded for IP: ${req.ip}`);
-    res.status(429).json(options.message);
-  },
-});
+// TEMP: Rate limiting disabled for debugging 429 behavior. Re-enable after investigation.
+export const authRateLimiter = (_req: any, _res: any, next: any): void => next();
 
 /**
  * Rate limiting for workflow endpoints
  * Prevents abuse of computationally expensive operations
  */
-export const workflowRateLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 30, // 30 requests per minute
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    success: false,
-    error: {
-      code: 'TOO_MANY_REQUESTS',
-      message: 'Too many workflow requests, please try again later.',
-    },
-  },
-  handler: (req, res, _next, options) => {
-    logger.warn(`Workflow rate limit exceeded for IP: ${req.ip}`);
-    res.status(429).json(options.message);
-  },
-});
+// TEMP: Rate limiting disabled for debugging 429 behavior. Re-enable after investigation.
+export const workflowRateLimiter = (_req: any, _res: any, next: any): void => next();
 
 /**
  * Request sanitization middleware

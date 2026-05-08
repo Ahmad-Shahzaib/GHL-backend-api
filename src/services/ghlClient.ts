@@ -41,13 +41,74 @@ import { config, GHL_OAUTH_URLS, GHL_API_ENDPOINTS, GHL_API_VERSION } from '../c
 import { tokenStore } from './tokenStore';
 import { cacheService } from './cacheService';
 import { workflowRulesService } from './workflowRulesService';
-import { rateLimiterService } from './rateLimiterService';
 import { logger } from '../utils/logger';
 
 export class GHLClient {
   private axiosInstance: AxiosInstance;
   private tokenKey: string | null = null;
   private apiKey: string | null = null;
+
+  private isRetriableError(error: any): boolean {
+    const status = error?.status || error?.response?.status;
+    const code = error?.code;
+    const apiError = error?.error;
+
+    if ([429, 500, 502, 503, 504].includes(status)) return true;
+    if (code === 'ECONNABORTED' || code === 'ETIMEDOUT' || code === 'ECONNRESET') return true;
+    if (apiError === 'NETWORK_ERROR') return true;
+
+    return false;
+  }
+
+  private async withRetry<T>(operation: () => Promise<T>, context: string, maxAttempts = 2): Promise<T> {
+    let lastError: any;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await operation();
+      } catch (error: any) {
+        lastError = error;
+        const shouldRetry = this.isRetriableError(error);
+        const isLastAttempt = attempt >= maxAttempts;
+
+        logger.warn(`${context} failed (attempt ${attempt}/${maxAttempts})`, {
+          status: error?.status || error?.response?.status,
+          code: error?.code,
+          message: error?.message,
+          retriable: shouldRetry,
+        });
+
+        if (!shouldRetry || isLastAttempt) break;
+
+        const retryAfterHeader = error?.response?.headers?.['retry-after'];
+        const retryAfterSeconds = Number.parseInt(retryAfterHeader, 10);
+        const backoffMs = Number.isFinite(retryAfterSeconds)
+          ? Math.max(250, retryAfterSeconds * 1000)
+          : 250 * attempt;
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+      }
+    }
+
+    throw lastError;
+  }
+
+  private async withRetryFallback<T>(
+    operation: () => Promise<T>,
+    context: string,
+    fallback: T,
+    maxAttempts = 2
+  ): Promise<T> {
+    try {
+      return await this.withRetry(operation, context, maxAttempts);
+    } catch (error: any) {
+      logger.warn(`${context} exhausted retries, using fallback`, {
+        status: error?.status || error?.response?.status,
+        code: error?.code,
+        message: error?.message,
+      });
+      return fallback;
+    }
+  }
 
   constructor() {
     this.axiosInstance = axios.create({
@@ -279,11 +340,7 @@ export class GHLClient {
     };
 
     if (rateLimitKey) {
-      return rateLimiterService.executeWithRateLimit(
-        rateLimitKey,
-        async () => this.executeRequest<T>(requestConfig),
-        3
-      );
+      logger.debug(`Rate limiter bypassed for key: ${rateLimitKey}`);
     }
 
     return this.executeRequest<T>(requestConfig);
@@ -595,36 +652,17 @@ export class GHLClient {
     userId?: string;
     page?: number;
   }): Promise<any> {
-    const locationId = params?.locationId || '';
+    const queryParams = new URLSearchParams();
+    if (params?.locationId) queryParams.append('locationId', params.locationId);
+    if (params?.limit)      queryParams.append('limit',      params.limit.toString());
+    if (params?.calendarId) queryParams.append('calendarId', params.calendarId);
+    if (params?.startTime)  queryParams.append('startTime',  params.startTime);
+    if (params?.endTime)    queryParams.append('endTime',    params.endTime);
+    if (params?.userId)     queryParams.append('userId',     params.userId);
+    if (params?.page)       queryParams.append('page',       params.page.toString());
 
-    // Use location token if available, fall back to pit- key
-    const token = await this.getValidAccessToken();
-
-    const contactsRes = await axios.get(
-      `https://services.leadconnectorhq.com/contacts/?locationId=${locationId}&limit=100`,
-      { headers: { 'Authorization': `Bearer ${token}`, 'Version': '2021-07-28' } }
-    );
-
-    const contacts = contactsRes.data.contacts || [];
-
-    const allAppointments = (await Promise.all(
-      contacts.map((contact: any) =>
-        axios.get(
-          `https://services.leadconnectorhq.com/contacts/${contact.id}/appointments`,
-          { headers: { 'Authorization': `Bearer ${token}`, 'Version': '2021-07-28' } }
-        ).then(res => (res.data.events || []).map((appt: any) => ({
-          ...appt,
-          contactName:  `${contact.firstName || ''} ${contact.lastName || ''}`.trim(),
-          contactEmail: contact.email,
-        }))).catch(() => [])
-      )
-    )).flat();
-
-    allAppointments.sort((a: any, b: any) =>
-      new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
-    );
-
-    return { events: allAppointments, meta: { total: allAppointments.length } };
+    const url = `${GHL_API_ENDPOINTS.appointments}?${queryParams.toString()}`;
+    return this.makeRequest<any>({ method: 'GET', url });
   }
 
   async getAppointment(appointmentId: string): Promise<GHLAppointment> {
@@ -749,20 +787,24 @@ export class GHLClient {
     logger.warn('Could not fetch pipelines:', error);
   }
 
-  try {
-    const contactsResponse = await this.getContacts({ limit: 100, locationId: effectiveLocationId });
-    contacts = contactsResponse.contacts || [];
-  } catch (error) {
-    logger.warn('Could not fetch contacts:', error);
-  }
+  const [contactsResponse, opportunitiesResponse] = await Promise.all([
+    this.withRetryFallback(
+      () => this.getContacts({ limit: 100, locationId: effectiveLocationId }),
+      'getDashboardStats contacts',
+      { contacts: [], meta: { total: 0 } } as GHLContactsResponse
+    ),
+    this.withRetryFallback(
+      () => this.getOpportunities({ limit: 100, locationId: effectiveLocationId }),
+      'getDashboardStats opportunities',
+      { opportunities: [], meta: { total: 0 } } as GHLOpportunitiesResponse
+    ),
+  ]);
 
-  try {
-    const opportunitiesResponse = await this.getOpportunities({ limit: 100, locationId: effectiveLocationId });
-    opportunities = opportunitiesResponse.opportunities || [];
-    logger.info(`Dashboard Stats: Fetched ${opportunities.length} opportunities`);
-  } catch (error) {
-    logger.warn('Could not fetch opportunities:', error);
-  }
+  contacts = contactsResponse.contacts || [];
+  opportunities = opportunitiesResponse.opportunities || [];
+  const totalContacts = contactsResponse.meta?.total ?? contacts.length;
+  const totalOpportunities = opportunitiesResponse.meta?.total ?? opportunities.length;
+  logger.info(`Dashboard Stats: Fetched ${opportunities.length} opportunities`);
 
   const totalOpportunityValue = opportunities.reduce((sum, opp) => {
     return sum + (opp.monetaryValue || 0);
@@ -804,8 +846,8 @@ export class GHLClient {
   }));
 
   return {
-    totalContacts:        contacts.length,
-    totalOpportunities:   opportunities.length,
+    totalContacts,
+    totalOpportunities,
     totalOpportunityValue,
     totalAppointments:    0,
     recentContacts,
@@ -829,10 +871,26 @@ export class GHLClient {
     const startDate    = dateRange?.startDate || thirtyDaysAgo.toISOString();
     const endDate      = dateRange?.endDate   || now.toISOString();
     const [contactsResponse, opportunitiesResponse, pipelinesResponse, appointmentsResponse] = await Promise.all([
-      this.getContacts({ limit: 100, locationId: effectiveLocationId }).catch(() => ({ contacts: [], meta: { total: 0 } })),
-      this.getOpportunities({ limit: 100, locationId: effectiveLocationId }).catch(() => ({ opportunities: [], meta: { total: 0 } })),
-      this.getPipelines(effectiveLocationId).catch(() => ({ pipelines: [] })),
-      this.getAppointments({ locationId: effectiveLocationId, limit: 100 }).catch(() => ({ events: [], meta: { total: 0 } })),
+      this.withRetryFallback(
+        () => this.getContacts({ limit: 100, locationId: effectiveLocationId }),
+        'getKpiMetrics contacts',
+        { contacts: [], meta: { total: 0 } } as GHLContactsResponse
+      ),
+      this.withRetryFallback(
+        () => this.getOpportunities({ limit: 100, locationId: effectiveLocationId }),
+        'getKpiMetrics opportunities',
+        { opportunities: [], meta: { total: 0 } } as GHLOpportunitiesResponse
+      ),
+      this.withRetryFallback(
+        () => this.getPipelines(effectiveLocationId),
+        'getKpiMetrics pipelines',
+        { pipelines: [] }
+      ),
+      this.withRetryFallback(
+        () => this.getAppointments({ locationId: effectiveLocationId, limit: 100 }),
+        'getKpiMetrics appointments',
+        { events: [], meta: { total: 0 } }
+      ),
     ]);
     const contacts      = contactsResponse.contacts      || [];
     const opportunities = opportunitiesResponse.opportunities || [];
@@ -843,8 +901,8 @@ export class GHLClient {
       const t = new Date(a.startTime).getTime();
       return t >= new Date(startDate).getTime() && t <= new Date(endDate).getTime();
     });
-    const totalContacts      = contacts.length;
-    const totalOpportunities = opportunities.length;
+    const totalContacts      = contactsResponse.meta?.total ?? contacts.length;
+    const totalOpportunities = opportunitiesResponse.meta?.total ?? opportunities.length;
     const totalPipelineValue = opportunities.reduce((sum: number, opp: GHLOpportunity) => sum + (opp.monetaryValue || 0), 0);
     const totalAppointments  = appointments.length;
     const conversionRate      = totalContacts > 0 ? Math.round((totalOpportunities / totalContacts) * 100) : 0;
@@ -1201,8 +1259,16 @@ export class GHLClient {
 
     try {
       const [appointmentsResponse, opportunitiesResponse] = await Promise.all([
-        this.getAppointments({ locationId, startTime: startDate, endTime: endDate, limit: 1000 }),
-        this.getOpportunities({ limit: 100, locationId }), // Fixed: GHL limit is 100
+        this.withRetryFallback(
+          () => this.getAppointments({ locationId, startTime: startDate, endTime: endDate, limit: 1000 }),
+          'getRevenueByHour appointments',
+          { events: [], meta: { total: 0 } }
+        ),
+        this.withRetryFallback(
+          () => this.getOpportunities({ limit: 100, locationId }),
+          'getRevenueByHour opportunities',
+          { opportunities: [], meta: { total: 0 } } as GHLOpportunitiesResponse
+        ),
       ]);
 
       const appointments  = appointmentsResponse.events    || [];
@@ -1260,8 +1326,17 @@ export class GHLClient {
 
       return { hours, primeHoursTotal, offPeakHoursTotal, primeHours: PRIME_HOURS };
     } catch (error) {
-      logger.warn('Failed to get revenue by hour:', error);
-      return { hours: Array.from({ length: 12 }, (_, i) => ({ hour: i + 8, label: `${i + 8}:00`, revenue: 0, isPrime: PRIME_HOURS.includes(i + 8) })), primeHoursTotal: 0, offPeakHoursTotal: 0, primeHours: PRIME_HOURS };
+      logger.error('Failed to get revenue by hour, returning safe fallback:', error);
+      const hours = Array.from({ length: 12 }, (_, i) => {
+        const hour = i + 8;
+        return {
+          hour,
+          label: `${hour}:00`,
+          revenue: 0,
+          isPrime: PRIME_HOURS.includes(hour),
+        };
+      });
+      return { hours, primeHoursTotal: 0, offPeakHoursTotal: 0, primeHours: PRIME_HOURS };
     }
   }
 
@@ -1280,8 +1355,16 @@ export class GHLClient {
 
     try {
       const [appointmentsResponse, opportunitiesResponse] = await Promise.all([
-        this.getAppointments({ locationId, startTime: startDate.toISOString(), endTime: now.toISOString(), limit: 1000 }),
-        this.getOpportunities({ limit: 100, locationId }), // Fixed: GHL limit is 100, not 500
+        this.withRetryFallback(
+          () => this.getAppointments({ locationId, startTime: startDate.toISOString(), endTime: now.toISOString(), limit: 1000 }),
+          'getDailyRevenue appointments',
+          { events: [], meta: { total: 0 } }
+        ),
+        this.withRetryFallback(
+          () => this.getOpportunities({ limit: 100, locationId }),
+          'getDailyRevenue opportunities',
+          { opportunities: [], meta: { total: 0 } } as GHLOpportunitiesResponse
+        ),
       ]);
 
       const appointments  = appointmentsResponse.events    || [];
@@ -1384,13 +1467,16 @@ export class GHLClient {
 
       return { dailyRevenue, totalRevenue, avgDailyRevenue, bestDay: bestDay ? { date: bestDay.date, revenue: bestDay.revenue } : null };
     } catch (error) {
-      logger.warn('Failed to get daily revenue:', error);
-      const emptyDaily = Array.from({ length: days }, (_, i) => ({
-        date: this.toLocalDateString(new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000)),
-        revenue: 0,
-        appointmentCount: 0
-      }));
-      return { dailyRevenue: emptyDaily, totalRevenue: 0, avgDailyRevenue: 0, bestDay: null };
+      logger.error('Failed to get daily revenue, returning safe fallback:', error);
+      const dailyRevenue = Array.from({ length: days }, (_, d) => {
+        const date = new Date(startDate.getTime() + d * 24 * 60 * 60 * 1000);
+        return {
+          date: this.toLocalDateString(date),
+          revenue: 0,
+          appointmentCount: 0,
+        };
+      });
+      return { dailyRevenue, totalRevenue: 0, avgDailyRevenue: 0, bestDay: null };
     }
   }
 

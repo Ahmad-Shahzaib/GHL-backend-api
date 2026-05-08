@@ -4,16 +4,51 @@ import { authenticate } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { ApiResponse, PaginationMeta, GHLDashboardStats, KpiDashboardData } from '../types';
 import { logger } from '../utils/logger';
-import { setupLocationToken } from '../utils/setupLocationToken'; // shared helper
+import { setupLocationToken } from '../utils/setupLocationToken';
 
 const router = Router();
+
+// Simple in-memory cache to avoid duplicate GHL calls within 30 seconds
+const statsCache = new Map<string, { data: any; ts: number }>();
+const CACHE_TTL  = 30_000; // 30 seconds
+
+const EMPTY_DASHBOARD_STATS: GHLDashboardStats = {
+  totalContacts: 0,
+  totalOpportunities: 0,
+  totalOpportunityValue: 0,
+  totalAppointments: 0,
+  recentContacts: [],
+  recentOpportunities: [],
+  pipelineSummary: [],
+};
+
+async function getCachedStats(locationId: string) {
+  const cached = statsCache.get(locationId);
+  if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.data;
+
+  try {
+    const data = await ghlClient.getDashboardStats(locationId);
+    statsCache.set(locationId, { data, ts: Date.now() });
+    return data;
+  } catch (error: any) {
+    logger.warn('getCachedStats failed, using fallback', {
+      locationId,
+      hasCached: !!cached,
+      message: error?.message,
+      status: error?.status || error?.response?.status,
+    });
+
+    if (cached?.data) return cached.data;
+    return EMPTY_DASHBOARD_STATS;
+  }
+}
 
 router.get(
   '/stats',
   authenticate,
   asyncHandler(async (req: Request, res: Response) => {
     const locationId = await setupLocationToken(req);
-    const stats = await ghlClient.getDashboardStats(locationId);
+    const stats = await getCachedStats(locationId);
     const response: ApiResponse<GHLDashboardStats> = { success: true, data: stats };
     res.json(response);
   })
@@ -24,7 +59,7 @@ router.get(
   authenticate,
   asyncHandler(async (req: Request, res: Response) => {
     const locationId = await setupLocationToken(req);
-    const stats      = await ghlClient.getDashboardStats(locationId);
+    const stats      = await getCachedStats(locationId);
     const summary    = {
       totalContacts:         stats.totalContacts,
       totalOpportunities:    stats.totalOpportunities,
@@ -79,7 +114,7 @@ router.get(
   authenticate,
   asyncHandler(async (req: Request, res: Response) => {
     const locationId = await setupLocationToken(req);
-    const stats      = await ghlClient.getDashboardStats(locationId);
+    const stats      = await getCachedStats(locationId);
     const response: ApiResponse<typeof stats.pipelineSummary> = { success: true, data: stats.pipelineSummary };
     res.json(response);
   })
@@ -184,7 +219,7 @@ router.get(
   authenticate,
   asyncHandler(async (req: Request, res: Response) => {
     const locationId    = await setupLocationToken(req);
-    const stats         = await ghlClient.getDashboardStats(locationId);
+    const stats         = await getCachedStats(locationId);
     const kpiData       = await ghlClient.getKpiMetrics(locationId);
 
     const detail = {

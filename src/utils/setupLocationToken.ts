@@ -1,5 +1,6 @@
 import { Request } from 'express';
 import { ghlClient } from '../services/ghlClient';
+import { tokenStore } from '../services/tokenStore';
 import { logger } from '../utils/logger';
 
 /**
@@ -21,6 +22,12 @@ export const setupLocationToken = async (req: Request): Promise<string | undefin
   if (!locationId) {
     logger.warn('setupLocationToken: no locationId on request — falling back to pit- key');
     return undefined;
+  }
+
+  const hasValidStoredToken = await tokenStore.hasValidTokens(locationId);
+  if (hasValidStoredToken) {
+    ghlClient.setTokenKey(locationId);
+    return locationId;
   }
 
   try {
