@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { authenticate } from '../middleware/auth';
 import { asyncHandler, Errors } from '../middleware/errorHandler';
-import { ApiResponse, PaginationMeta } from '../types';
+import { PaginationMeta } from '../types';
 import { logger } from '../utils/logger';
 import { Treatment } from '../models/Treatment';
 

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { ApiResponse } from '../types';
+// import { ApiResponse } from '../types';
 import { ghlClient } from '../services/ghlClient';
 import { logger } from '../utils/logger';
 import { Alert } from '../models/Alert';

@@ -135,7 +135,7 @@ async function handleAppUninstall(payload: GHLWebhookPayload): Promise<void> {
 async function autoInstallApp(companyId: string, locationId: string): Promise<void> {
   const axios = require('axios');
   const { tokenStore } = require('../services/tokenStore');
-  const { decrypt } = require('../utils/encryption');
+  // const { decrypt } = require('../utils/encryption');
 
   // Get company token
   const companyTokenData = await tokenStore.getTokens(companyId);

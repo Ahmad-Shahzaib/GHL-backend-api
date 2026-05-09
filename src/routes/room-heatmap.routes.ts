@@ -35,12 +35,12 @@ router.get(
     const heatmapData  = await ghlClient.getRoomUtilizationHeatmap({ locationId });
     const totalRooms   = heatmapData.data.length;
     const avgUtilization = totalRooms > 0
-      ? Math.round(heatmapData.data.reduce((sum, r) => sum + r.utilPct, 0) / totalRooms)
+      ? Math.round(heatmapData.data.reduce((sum: number, r: any) => sum + r.utilPct, 0) / totalRooms)
       : 0;
 
-    const topPerformingRooms   = heatmapData.data.filter(r => r.utilPct >= 55).map(r => ({ room: r.room, utilPct: r.utilPct, totalRevenue: r.totalRevenue }));
-    const underperformingRooms = heatmapData.data.filter(r => r.utilPct <  55).map(r => ({ room: r.room, utilPct: r.utilPct, totalRevenue: r.totalRevenue }));
-    const totalRevenue         = heatmapData.data.reduce((sum, r) => sum + r.totalRevenue, 0);
+    const topPerformingRooms   = heatmapData.data.filter((r: any) => r.utilPct >= 55).map((r: any) => ({ room: r.room, utilPct: r.utilPct, totalRevenue: r.totalRevenue }));
+    const underperformingRooms = heatmapData.data.filter((r: any) => r.utilPct <  55).map((r: any) => ({ room: r.room, utilPct: r.utilPct, totalRevenue: r.totalRevenue }));
+    const totalRevenue         = heatmapData.data.reduce((sum: number, r: any) => sum + r.totalRevenue, 0);
 
     const stats = { totalRooms, avgUtilization, uniqueDays: heatmapData.uniqueDays, totalRevenue, topPerformingRooms, underperformingRooms };
     const response: ApiResponse<typeof stats> = { success: true, data: stats };
@@ -62,7 +62,7 @@ router.get(
     logger.info('Fetching room heatmap for specific room:', { roomName, locationId });
 
     const heatmapData = await ghlClient.getRoomUtilizationHeatmap({ locationId, startDate, endDate });
-    const roomData    = heatmapData.data.find(r => r.room === roomName);
+    const roomData    = heatmapData.data.find((r: any) => r.room === roomName);
     if (!roomData) throw new Error(`Room "${roomName}" not found`);
 
     const response: ApiResponse<typeof roomData> = { success: true, data: roomData };

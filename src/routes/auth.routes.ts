@@ -384,7 +384,7 @@ router.post(
 router.post(
   '/pre-register',
   asyncHandler(async (req: Request, res: Response) => {
-    const { email, plan, fullName, companyName, phone, desiredLocationName } = req.body;
+    const { email, fullName, companyName, phone, desiredLocationName } = req.body;
     if (!email) throw Errors.BadRequest('Email is required');
 
     const existing = await User.findOne({ email: email.toLowerCase() });
@@ -398,7 +398,8 @@ router.post(
         await existing.save();
       }
       const response: ApiResponse<{ saved: boolean }> = { success: true, data: { saved: true } };
-      return res.json(response);
+      res.json(response);
+      return;
     }
 
     const crypto = require('crypto');

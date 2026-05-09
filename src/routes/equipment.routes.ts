@@ -12,7 +12,7 @@ router.get('/', async (req: Request, res: Response) => {
       res.status(400).json({ success: false, error: 'locationId is required' });
       return;
     }
-    const equipment = await Equipment.find({ locationId }).sort({ createdAt: 1 }).lean();
+    const equipment = await Equipment.find({ locationId: String(locationId) }).sort({ createdAt: 1 }).lean();
     res.json({ success: true, data: equipment });
   } catch (error) {
     logger.error('Error fetching equipment:', error);

@@ -1,7 +1,7 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosError } from 'axios';
 import { 
   GHLTokenResponse, 
-  GHLTokenRequest, 
+  // GHLTokenRequest,
   GHLContactsResponse,
   GHLContact,
   GHLOpportunitiesResponse,
@@ -16,8 +16,8 @@ import {
   GHLAppointment,
   GHLResource,
   GHLCalendar,
-  RoomUtilizationHeatmap,
-  RoomHeatmapQueryParams,
+  // RoomUtilizationHeatmap,
+  // RoomHeatmapQueryParams,
   KpiDashboardData,
   KpiMetric,
   PipelineKpiData,
@@ -25,8 +25,8 @@ import {
   GHLWorkflow,
   GHLWorkflowsResponse,
   WorkflowOptimizationRule,
-  WorkflowSchedulingViolation,
-  WorkflowScheduleBlock,
+  // WorkflowSchedulingViolation,
+  // WorkflowScheduleBlock,
   GHLOptimizationAlert,
   GHLOptimizationAlertsResponse,
   AlertCreateRequest,
@@ -39,7 +39,7 @@ import {
 } from '../types';
 import { config, GHL_OAUTH_URLS, GHL_API_ENDPOINTS, GHL_API_VERSION } from '../config';
 import { tokenStore } from './tokenStore';
-import { cacheService } from './cacheService';
+// import { cacheService } from './cacheService';
 import { workflowRulesService } from './workflowRulesService';
 import { logger } from '../utils/logger';
 
@@ -1256,11 +1256,11 @@ export class GHLClient {
     const dailyRevenue          = totalRevenue / uniqueDays;
     const annualBase            = dailyRevenue * 250;
     const avgUtilization        = heatmapData.data && heatmapData.data.length > 0
-      ? Math.round(heatmapData.data.reduce((sum, r) => sum + r.utilPct, 0) / heatmapData.data.length) : 0;
+      ? Math.round(heatmapData.data.reduce((sum: number, r: any) => sum + r.utilPct, 0) / heatmapData.data.length) : 0;
 
     const PRIME_HOURS = [10, 11, 12, 13, 14, 15, 16, 17];
     let primeHourBookings = 0;
-    heatmapData.data.forEach(room => { PRIME_HOURS.forEach(hour => { if (room.hours[hour]) primeHourBookings += room.hours[hour].booked; }); });
+    heatmapData.data.forEach((room: any) => { PRIME_HOURS.forEach(hour => { if (room.hours[hour]) primeHourBookings += room.hours[hour].booked; }); });
 
     const numRooms              = heatmapData.rooms.length || 4;
     const totalPrimeSlots       = numRooms * PRIME_HOURS.length * uniqueDays;
@@ -1342,7 +1342,7 @@ export class GHLClient {
 
       // Always process opportunities to capture revenue (not just as fallback)
       opportunities.forEach(opp => {
-        const monetaryValue = (opp as any).monetaryValue || (opp as any).value || (opp as any).amount || 0;
+        // const monetaryValue = (opp as any).monetaryValue || (opp as any).value || (opp as any).amount || 0;
         if (!monetaryValue || monetaryValue === 0) return;
         
         // Use createdAt if dateAdded doesn't exist
@@ -1420,7 +1420,7 @@ export class GHLClient {
         
         // Check all opportunities for any monetary value fields
         opportunities.forEach((opp, idx) => {
-          const monetaryValue = (opp as any).monetaryValue || (opp as any).value || (opp as any).amount || 0;
+          // const monetaryValue = (opp as any).monetaryValue || (opp as any).value || (opp as any).amount || 0;
           logger.info(`Opp ${idx}: id=${opp.id}, name=${opp.name}, monetaryValue=${(opp as any).monetaryValue}, value=${(opp as any).value}, amount=${(opp as any).amount}, dateAdded=${opp.dateAdded}, createdAt=${(opp as any).createdAt}`);
           
           // Check custom fields for value
@@ -1467,7 +1467,7 @@ export class GHLClient {
       // Process opportunities – use local date
       opportunities.forEach(opp => {
         // Try multiple field names for monetary value
-        const monetaryValue = (opp as any).monetaryValue || (opp as any).value || (opp as any).amount || 0;
+        // const monetaryValue = (opp as any).monetaryValue || (opp as any).value || (opp as any).amount || 0;
         if (!monetaryValue || monetaryValue === 0) {
           logger.debug(`Skipping opportunity ${opp.id} - no monetary value`);
           return;

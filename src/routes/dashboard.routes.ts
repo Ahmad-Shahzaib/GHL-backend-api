@@ -22,7 +22,8 @@ const EMPTY_DASHBOARD_STATS: GHLDashboardStats = {
   pipelineSummary: [],
 };
 
-async function getCachedStats(locationId: string) {
+async function getCachedStats(locationId: string | undefined) {
+  if (!locationId) return null;
   const cached = statsCache.get(locationId);
   if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.data;
 
@@ -227,7 +228,7 @@ router.get(
       pipelineStats:   kpiData.pipelineStats,
       totalPipelines:  stats.pipelineSummary.length,
       totalStages:     stats.pipelineSummary.reduce(
-        (acc, p) => acc + Object.keys(p.stageCounts || {}).length, 0
+        (acc: number, p: any) => acc + Object.keys(p.stageCounts || {}).length, 0
       ),
     };
 

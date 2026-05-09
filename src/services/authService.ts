@@ -150,7 +150,7 @@ export class AuthService {
   }
 
   private async createLocationForUser(user: IUser) {
-    ghlClient.setApiKey(config.GHL_ADMIN_API_KEY);
+    if (config.GHL_ADMIN_API_KEY) ghlClient.setApiKey(config.GHL_ADMIN_API_KEY);
 
     const locationPayload = {
       name: user.desiredLocationName || user.companyName,
@@ -253,7 +253,7 @@ export class AuthService {
 
   async handleOAuthCallback(
     code: string,
-    userType: 'Company' | 'Location' = 'Location'
+    _userType: 'Company' | 'Location' = 'Location'
   ): Promise<{ token: string; user: AuthUser }> {
     try {
       const tokenResponse = await ghlClient.exchangeCodeForToken(code, 'Company');

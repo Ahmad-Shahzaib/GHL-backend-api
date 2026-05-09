@@ -84,7 +84,7 @@ class PollingService {
     const locationId = location.id;
     const email      = location.email || location.business?.email || '';
     const name       = location.name  || '';
-    const phone      = location.phone || '';
+    // const phone = location.phone || '';
 
     if (!email) return;
 
