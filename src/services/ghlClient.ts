@@ -1342,7 +1342,7 @@ export class GHLClient {
 
       // Always process opportunities to capture revenue (not just as fallback)
       opportunities.forEach(opp => {
-        // const monetaryValue = (opp as any).monetaryValue || (opp as any).value || (opp as any).amount || 0;
+        const monetaryValue = (opp as any).monetaryValue || (opp as any).value || (opp as any).amount || 0;
         if (!monetaryValue || monetaryValue === 0) return;
         
         // Use createdAt if dateAdded doesn't exist
@@ -1420,7 +1420,7 @@ export class GHLClient {
         
         // Check all opportunities for any monetary value fields
         opportunities.forEach((opp, idx) => {
-          // const monetaryValue = (opp as any).monetaryValue || (opp as any).value || (opp as any).amount || 0;
+          const monetaryValue = (opp as any).monetaryValue || (opp as any).value || (opp as any).amount || 0;
           logger.info(`Opp ${idx}: id=${opp.id}, name=${opp.name}, monetaryValue=${(opp as any).monetaryValue}, value=${(opp as any).value}, amount=${(opp as any).amount}, dateAdded=${opp.dateAdded}, createdAt=${(opp as any).createdAt}`);
           
           // Check custom fields for value
@@ -1467,7 +1467,7 @@ export class GHLClient {
       // Process opportunities – use local date
       opportunities.forEach(opp => {
         // Try multiple field names for monetary value
-        // const monetaryValue = (opp as any).monetaryValue || (opp as any).value || (opp as any).amount || 0;
+        const monetaryValue = (opp as any).monetaryValue || (opp as any).value || (opp as any).amount || 0;
         if (!monetaryValue || monetaryValue === 0) {
           logger.debug(`Skipping opportunity ${opp.id} - no monetary value`);
           return;
