@@ -103,7 +103,7 @@ export const GHL_API_ENDPOINTS = {
   locationById:        (id: string) => `/locations/${id}`,
   calendars:           '/calendars/',
   calendarById:        (id: string) => `/calendars/${id}`,
-  appointments:        '/calendars/events/appointments',
+  appointments:        '/calendars/events',
   appointmentById:     (id: string) => `/calendars/events/appointments/${id}`,
   resources:           '/calendars/resources',
   resourceById:        (id: string) => `/calendars/resources/${id}`,

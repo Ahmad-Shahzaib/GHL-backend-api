@@ -652,17 +652,75 @@ export class GHLClient {
     userId?: string;
     page?: number;
   }): Promise<any> {
-    const queryParams = new URLSearchParams();
-    if (params?.locationId) queryParams.append('locationId', params.locationId);
-    if (params?.limit)      queryParams.append('limit',      params.limit.toString());
-    if (params?.calendarId) queryParams.append('calendarId', params.calendarId);
-    if (params?.startTime)  queryParams.append('startTime',  params.startTime);
-    if (params?.endTime)    queryParams.append('endTime',    params.endTime);
-    if (params?.userId)     queryParams.append('userId',     params.userId);
-    if (params?.page)       queryParams.append('page',       params.page.toString());
+    const locationId = params?.locationId || '';
+    const now        = new Date();
+    const startTime  = params?.startTime 
+      ? String(new Date(params.startTime).getTime())
+      : String(new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).getTime()); // 90 days ago
+    const endTime    = params?.endTime   
+      ? String(new Date(params.endTime).getTime())
+      : String(new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).getTime()); // 30 days ahead
 
-    const url = `${GHL_API_ENDPOINTS.appointments}?${queryParams.toString()}`;
-    return this.makeRequest<any>({ method: 'GET', url });
+    // If calendarId or userId provided, fetch directly
+    if (params?.calendarId || params?.userId) {
+      const queryParams = new URLSearchParams();
+      if (params?.calendarId) queryParams.append('calendarId', params.calendarId!);
+      if (params?.userId)     queryParams.append('userId',     params.userId!);
+      if (locationId)         queryParams.append('locationId', locationId);
+      queryParams.append('startTime', startTime);
+      queryParams.append('endTime',   endTime);
+      const url = `${GHL_API_ENDPOINTS.appointments}?${queryParams.toString()}`;
+      logger.info('getAppointments direct fetch:', { url, startTime, endTime });
+      const result = await this.makeRequest<any>({ method: 'GET', url });
+      logger.info('getAppointments direct result:', { events: result?.events?.length, appointments: result?.appointments?.length });
+      return result;
+    }
+
+    // No calendarId — fetch all calendars first then get appointments per calendar
+    try {
+      const calendarsRes = await this.getCalendars(locationId);
+      const calendars    = Array.isArray(calendarsRes) ? calendarsRes : (calendarsRes?.calendars ?? []);
+
+      if (calendars.length === 0) {
+        return { events: [], appointments: [], meta: { total: 0 } };
+      }
+
+      logger.info('getAppointments: fetching per calendar', { calendarsCount: calendars.length, startTime, endTime });
+
+      // Fetch appointments for each calendar in parallel (max 5 at a time)
+      const chunkSize = 5;
+      const allEvents: any[] = [];
+
+      for (let i = 0; i < calendars.length; i += chunkSize) {
+        const chunk = calendars.slice(i, i + chunkSize);
+        const results = await Promise.allSettled(
+          chunk.map((cal: any) => {
+            const qp = new URLSearchParams();
+            qp.append('calendarId', cal.id);
+            qp.append('locationId', locationId);
+            qp.append('startTime',  startTime);
+            qp.append('endTime',    endTime);
+            const url = `${GHL_API_ENDPOINTS.appointments}?${qp.toString()}`;
+            return this.makeRequest<any>({ method: 'GET', url });
+          })
+        );
+
+        results.forEach(r => {
+          if (r.status === 'fulfilled') {
+            const events = r.value?.events || r.value?.appointments || [];
+            logger.info('getAppointments calendar result:', { events: events.length, data: r.value });
+            allEvents.push(...events);
+          } else {
+            logger.warn('getAppointments calendar fetch failed:', r.reason?.message);
+          }
+        });
+      }
+
+      return { events: allEvents, appointments: allEvents, meta: { total: allEvents.length } };
+    } catch (error: any) {
+      logger.warn('Failed to fetch appointments from GHL API:', error?.response?.data || error?.message);
+      return { events: [], appointments: [], meta: { total: 0 } };
+    }
   }
 
   async getAppointment(appointmentId: string): Promise<GHLAppointment> {
@@ -1745,9 +1803,16 @@ export class GHLClient {
       const rangeEnd   = new Date(endDate).getTime();
       if (apptTime < rangeStart || apptTime > rangeEnd) return;
 
-      const start   = new Date(appt.startTime);
-      const hour    = start.getHours();
-      const dateStr = start.toISOString().split('T')[0];
+      // Parse hour from the appointment's startTime string directly
+      // to preserve the clinic's local timezone (e.g. "2026-04-20T14:00:00-07:00" → hour 14)
+      let hour: number;
+      const timeMatch = String(appt.startTime).match(/T(\d{2}):/);
+      if (timeMatch) {
+        hour = parseInt(timeMatch[1], 10);
+      } else {
+        hour = new Date(appt.startTime).getHours();
+      }
+      const dateStr = new Date(appt.startTime).toISOString().split('T')[0];
 
         if (hour < 8 || hour > 19) return;
         uniqueDates.add(dateStr);
