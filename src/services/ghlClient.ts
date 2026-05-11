@@ -743,21 +743,41 @@ export class GHLClient {
   async getResources(locationId?: string): Promise<any> {
     const token = await this.getValidAccessToken();
     try {
-      // Fetch calendar rooms from GHL
-      const res = await axios.get(
-        `https://services.leadconnectorhq.com/calendars/resources/rooms?locationId=${locationId}`,
-        { headers: { 'Authorization': `Bearer ${token}`, 'Version': '2021-07-28' } }
-      );
-      const rooms = (res.data.rooms || res.data.resources || []).map((r: any) => ({
-        id:            r.id,
+      // Fetch calendar rooms from GHL — pass a high limit so GHL doesn't silently cap results
+      const url = `https://services.leadconnectorhq.com/calendars/resources/rooms?locationId=${locationId}&limit=100&skip=0`;
+      logger.info('getResources: fetching from GHL', { url, locationId });
+      const res = await axios.get(url, {
+        headers: { 'Authorization': `Bearer ${token}`, 'Version': '2021-07-28' },
+      });
+      logger.info('getResources: raw GHL response', {
+        status: res.status,
+        dataKeys: Object.keys(res.data || {}),
+        roomsCount: (res.data.rooms || []).length,
+        resourcesCount: (res.data.resources || []).length,
+        totalField: res.data.total,
+        metaField: res.data.meta,
+        rawData: res.data,
+      });
+      // GHL returns the array directly (no wrapper key), but handle both shapes
+      const rawList: any[] = Array.isArray(res.data)
+        ? res.data
+        : (res.data.rooms || res.data.resources || []);
+      const rooms = rawList.map((r: any) => ({
+        id:            r._id || r.id,
         name:          r.name,
         capacity_type: r.resourceType || 'room',
         equipment:     r.description || '',
         quantity:      r.quantity || 1,
       }));
+      logger.info('getResources: mapped rooms', { count: rooms.length, rooms });
       return { resources: rooms, meta: { total: rooms.length } };
     } catch (error: any) {
-      logger.warn('Could not fetch calendar rooms:', error?.message);
+      logger.warn('Could not fetch calendar rooms:', {
+        message: error?.message,
+        status: error?.response?.status,
+        responseData: error?.response?.data,
+        locationId,
+      });
       return { resources: [], meta: { total: 0 } };
     }
   }

@@ -6,7 +6,7 @@ import axios from 'axios';
 const router = Router();
 
 const BASE44_APP_ID  = process.env.BASE44_APP_ID  || '69a7881ffc513255b74dd969';
-const BASE44_API_URL = 'https://api.base44.com';
+const BASE44_API_URL = 'https://quirky-clinic-flow-pro.base44.app';
 
 /**
  * @route   POST /api/base44/invoke

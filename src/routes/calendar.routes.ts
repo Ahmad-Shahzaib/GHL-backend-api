@@ -85,8 +85,9 @@ router.get(
       const resourcesResponse = await ghlClient.getResources(locationId);
       resources = resourcesResponse.resources || [];
       total     = resourcesResponse.meta?.total || resources.length;
+      logger.info('Resources route: returning resources', { count: resources.length, total, locationId });
     } catch (error: any) {
-      logger.warn('Failed to fetch resources from GHL API:', error?.message);
+      logger.warn('Failed to fetch resources from GHL API:', { message: error?.message, locationId });
     }
 
     const response: ApiResponse<GHLResource[]> = {
