@@ -6,12 +6,11 @@ import axios from 'axios';
 const router = Router();
 
 const BASE44_APP_ID  = process.env.BASE44_APP_ID  || '69a7881ffc513255b74dd969';
-const BASE44_API_KEY = process.env.BASE44_API_KEY  || '';
 const BASE44_API_URL = 'https://api.base44.com';
 
 /**
  * @route   POST /api/base44/invoke
- * @desc    Proxy Base44 InvokeLLM calls using API key to avoid CORS
+ * @desc    Proxy Base44 InvokeLLM calls to avoid CORS
  * @access  Public
  */
 router.post(
@@ -24,7 +23,7 @@ router.post(
         {
           headers: {
             'Content-Type': 'application/json',
-            'api_key': BASE44_API_KEY,
+            ...(req.headers.authorization ? { Authorization: req.headers.authorization } : {}),
           },
           timeout: 30000,
         }
