@@ -515,9 +515,11 @@ export class GHLClient {
     phone?: string;
     scopes?: string[];
   }): Promise<GHLUser> {
-    const token = this.apiKey;
     const locationId = process.env.GHL_LOCATION_ID || '';
-    const companyId  = process.env.GHL_COMPANY_ID  || locationId;
+    const companyId  = userData.companyId || process.env.GHL_COMPANY_ID || 'K9bORvG0pKtvt7QO4R9B';
+    // Use company token for user creation
+    const companyTokenData = await tokenStore.getTokens(companyId);
+    const token = companyTokenData?.accessToken || this.apiKey || '';
 
     const requestBody: any = {
       companyId,
@@ -777,7 +779,7 @@ export class GHLClient {
     calendarIds?: string[];
     resourceType?: 'rooms' | 'equipments';
   }): Promise<GHLResource> {
-    const token        = this.apiKey;
+    const token        = await this.getValidAccessToken();
     const resourceType = resourceData.resourceType || 'rooms';
     const locationId   = resourceData.locationId || process.env.GHL_LOCATION_ID || '';
 

@@ -40,7 +40,21 @@ export const helmetMiddleware = helmet({
 /**
  * CORS configuration
  */
-const corsOrigins = config.CORS_ORIGIN.split(',').map(origin => origin.trim());
+const corsOrigins = config.CORS_ORIGIN
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
+
+const isOriginAllowed = (origin: string): boolean => {
+  return corsOrigins.some((allowed) => {
+    if (allowed === '*') return true;
+    if (!allowed.includes('*')) return allowed === origin;
+
+    // Support wildcard patterns like https://*.vercel.app
+    const escaped = allowed.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+    return new RegExp(`^${escaped}$`).test(origin);
+  });
+};
 
 export const corsMiddleware = cors({
   origin: (origin, callback) => {
@@ -49,7 +63,7 @@ export const corsMiddleware = cors({
       return callback(null, true);
     }
     
-    if (corsOrigins.includes(origin) || config.NODE_ENV === 'development') {
+    if (isOriginAllowed(origin) || config.NODE_ENV === 'development') {
       callback(null, true);
     } else {
       logger.warn(`CORS blocked request from origin: ${origin}`);

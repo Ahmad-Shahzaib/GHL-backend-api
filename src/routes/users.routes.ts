@@ -114,14 +114,15 @@ router.post(
   authenticate,
   asyncHandler(async (req: Request, res: Response) => {
     ghlClient.setApiKey(req.ghlToken!);
-    const userData = req.body;
+    const userData = { ...req.body };
+
+    // Some clients provide a single display name. Keep creation resilient.
+    userData.firstName = String(userData.firstName || '').trim();
+    userData.lastName = String(userData.lastName || '').trim() || userData.firstName || 'Provider';
 
     // Validate required fields
     if (!userData.firstName) {
       throw Errors.BadRequest('First name is required');
-    }
-    if (!userData.lastName) {
-      throw Errors.BadRequest('Last name is required');
     }
     if (!userData.email) {
       throw Errors.BadRequest('Email is required');
