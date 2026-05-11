@@ -1422,7 +1422,6 @@ export class GHLClient {
         
         // Check all opportunities for any monetary value fields
         opportunities.forEach((opp, idx) => {
-          const monetaryValue = (opp as any).monetaryValue || (opp as any).value || (opp as any).amount || 0;
           logger.info(`Opp ${idx}: id=${opp.id}, name=${opp.name}, monetaryValue=${(opp as any).monetaryValue}, value=${(opp as any).value}, amount=${(opp as any).amount}, dateAdded=${opp.dateAdded}, createdAt=${(opp as any).createdAt}`);
           
           // Check custom fields for value
