@@ -12,6 +12,7 @@ const envSchema = z.object({
 
   // GHL Admin API Key
   GHL_ADMIN_API_KEY: z.string().optional(),
+  GHL_DASHBOARD_SSO_KEY: z.string().optional(),
 
   // Server
   PORT:     z.string().transform(Number).default('3000'),

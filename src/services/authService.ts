@@ -194,6 +194,51 @@ export class AuthService {
     return { token, user };
   }
 
+  async loginWithLocationId(locationId: string): Promise<{ token: string; user: IUser }> {
+    const normalizedLocationId = locationId.trim();
+    if (!normalizedLocationId) {
+      throw Errors.BadRequest('locationId is required');
+    }
+
+    let user = await User.findOne({ locationId: normalizedLocationId, isActive: true });
+
+    if (!user) {
+      try {
+        ghlClient.setTokenKey(normalizedLocationId);
+        const location = await ghlClient.getLocation(normalizedLocationId) as any;
+        const locationEmail = (location?.email || location?.business?.email || '').toLowerCase();
+
+        if (locationEmail) {
+          user = await User.findOne({ email: locationEmail, isActive: true });
+
+          if (user && user.locationId !== normalizedLocationId) {
+            user.locationId = normalizedLocationId;
+            await user.save();
+          }
+        }
+      } catch (error: any) {
+        logger.warn('Failed location-to-user fallback during auto-login', {
+          locationId: normalizedLocationId,
+          error: error?.message || 'Unknown error',
+        });
+      }
+    }
+
+    if (!user) {
+      throw Errors.Unauthorized('No active user found for this location');
+    }
+
+    const token = this.generateToken({
+      id: user._id.toString(),
+      email: user.email,
+      locationId: user.locationId ?? undefined,
+      companyId: user.companyId,
+      permissions: [],
+    });
+
+    return { token, user };
+  }
+
   // FIX #3 — return user object so frontend can store locationId in localStorage
   async setPassword(token: string, password: string): Promise<{ token: string; user: { id: string; email: string; locationId: string | null; plan: string } }> {
     const user = await User.findOne({

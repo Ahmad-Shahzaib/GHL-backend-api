@@ -86,6 +86,39 @@ const result = await authService.handleOAuthCallback(code, 'Location');
 );
 
 /**
+ * @route   GET /api/auth/ghl/auto-login
+ * @desc    Auto-login from GHL subaccount button via locationId + shared key
+ * @access  Public
+ */
+router.get(
+  '/ghl/auto-login',
+  asyncHandler(async (req: Request, res: Response) => {
+    const locationId = String(req.query.locationId || req.query.location_id || req.query.subaccountId || '').trim();
+
+    if (!locationId) {
+      throw Errors.BadRequest('locationId is required');
+    }
+
+    const { token, user } = await authService.loginWithLocationId(locationId);
+
+    const response: ApiResponse<{ token: string; user: { id: string; email: string; locationId?: string; plan: string } }> = {
+      success: true,
+      data: {
+        token,
+        user: {
+          id: user._id.toString(),
+          email: user.email,
+          locationId: user.locationId ?? undefined,
+          plan: user.plan,
+        },
+      },
+    };
+
+    res.json(response);
+  })
+);
+
+/**
  * @route   POST /api/auth/register
  * @desc    Register a pending clinic user and save to MongoDB
  * @access  Public
