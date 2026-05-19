@@ -177,11 +177,16 @@ export class AuthService {
   }
 
   async login(email: string, password: string): Promise<{ token: string; user: IUser }> {
-    const user = await User.findOne({ email, isActive: true });
-    if (!user || !user.passwordHash) throw new Error('Invalid credentials');
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const user = await User.findOne({ email: normalizedEmail, isActive: true });
+    if (!user || !user.passwordHash) {
+      throw Errors.Unauthorized('Invalid credentials');
+    }
 
     const valid = await bcrypt.compare(password, user.passwordHash);
-    if (!valid) throw new Error('Invalid credentials');
+    if (!valid) {
+      throw Errors.Unauthorized('Invalid credentials');
+    }
 
     const token = this.generateToken({
       id: user._id.toString(),

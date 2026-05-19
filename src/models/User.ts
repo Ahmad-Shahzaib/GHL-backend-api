@@ -16,6 +16,7 @@ export interface IUser extends Document {
   plan: 'basic' | 'pro' | 'agency';
   status: 'pending' | 'active';
   isActive: boolean;
+  role: 'user' | 'superadmin' | 'admin';
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
   passwordHash: string | null;
@@ -51,6 +52,7 @@ const UserSchema = new Schema<IUser>(
     passwordSetTokenExpiry:  { type: Date, default: null },
     passwordResetToken:      { type: String, default: null },
     passwordResetTokenExpiry:{ type: Date, default: null },
+    role:                   { type: String, enum: ['user', 'superadmin'], default: 'user' },
   },
   { timestamps: true }
 );

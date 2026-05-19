@@ -30,6 +30,9 @@ export const authenticate = async (
 
     const payload = jwt.verify(token, config.JWT_SECRET) as {
       userId: string;
+      email?: string;
+      locationId?: string;
+      companyId?: string;
     };
 
     const dbUser = await User.findById(payload.userId);
@@ -43,6 +46,7 @@ export const authenticate = async (
       locationId: dbUser.locationId ?? undefined,
       companyId: dbUser.companyId,
       permissions: ['*'],
+      role: dbUser.role as any,
     };
 
     // Pass admin API key as ghlToken for all dashboard routes

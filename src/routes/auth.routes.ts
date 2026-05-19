@@ -101,7 +101,7 @@ router.get(
 
     const { token, user } = await authService.loginWithLocationId(locationId);
 
-    const response: ApiResponse<{ token: string; user: { id: string; email: string; locationId?: string; plan: string } }> = {
+    const response: ApiResponse<{ token: string; user: { id: string; email: string; locationId?: string; plan: string; role: string; companyName?: string; desiredLocationName?: string; fullName?: string } }> = {
       success: true,
       data: {
         token,
@@ -110,6 +110,10 @@ router.get(
           email: user.email,
           locationId: user.locationId ?? undefined,
           plan: user.plan,
+          role: user.role || 'user',
+          companyName: user.companyName || '',
+          desiredLocationName: user.desiredLocationName || '',
+          fullName: user.fullName || '',
         },
       },
     };
@@ -235,7 +239,7 @@ router.post(
 
     const { token, user } = await authService.login(email, password);
 
-    const response: ApiResponse<{ token: string; user: { id: string; email: string; locationId?: string; plan: string } }> = {
+    const response: ApiResponse<{ token: string; user: { id: string; email: string; locationId?: string; plan: string; role: string; companyName?: string; desiredLocationName?: string; fullName?: string } }> = {
       success: true,
       data: {
         token,
@@ -244,6 +248,10 @@ router.post(
           email: user.email,
           locationId: user.locationId ?? undefined,
           plan: user.plan,
+          role: user.role || 'user',
+          companyName: user.companyName || '',
+          desiredLocationName: user.desiredLocationName || '',
+          fullName: user.fullName || '',
         },
       },
     };
@@ -360,11 +368,19 @@ router.get(
   '/me',
   authenticate,
   asyncHandler(async (req: Request, res: Response) => {
+    const currentUser = req.user?.id && req.user.id !== 'superadmin'
+      ? await User.findById(req.user.id).lean()
+      : null;
+
     const response: ApiResponse<{
       id: string;
       email: string;
       locationId?: string;
       companyId?: string;
+      role?: string;
+      companyName?: string;
+      desiredLocationName?: string;
+      fullName?: string;
     }> = {
       success: true,
       data: {
@@ -372,6 +388,10 @@ router.get(
         email: req.user!.email,
         locationId: req.user!.locationId,
         companyId: req.user!.companyId,
+        role: req.user!.role,
+        companyName: currentUser?.companyName || '',
+        desiredLocationName: currentUser?.desiredLocationName || '',
+        fullName: currentUser?.fullName || '',
       },
     };
     

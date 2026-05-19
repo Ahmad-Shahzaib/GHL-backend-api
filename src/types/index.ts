@@ -60,6 +60,7 @@ export interface AuthUser {
   locationId?: string;
   companyId?: string;
   permissions: string[];
+  role?: 'user' | 'admin' | 'superadmin';
 }
 
 export interface JWTPayload {
